@@ -5,7 +5,6 @@ import { useState } from 'react';
 
 interface PaymentButtonProps {
   orderId: string;
-  userId: string;
   amount: number;
   userEmail: string;
   userPhone: string;
@@ -13,7 +12,6 @@ interface PaymentButtonProps {
 
 export function PaymentButton({
   orderId,
-  userId,
   amount,
   userEmail,
   userPhone,
@@ -21,7 +19,6 @@ export function PaymentButton({
   const [hasAttempted, setHasAttempted] = useState(false);
   const { initializePayment, isLoading, error } = useRazorpayPayment({
     orderId,
-    userId,
     amount,
     userEmail,
     userPhone,
@@ -45,10 +42,7 @@ export function PaymentButton({
       {error && hasAttempted && (
         <div className="mt-2 p-3 bg-red-100 text-red-700 rounded">
           {error}
-          <button
-            onClick={handleClick}
-            className="ml-2 underline hover:no-underline"
-          >
+          <button onClick={handleClick} className="ml-2 underline hover:no-underline">
             Retry
           </button>
         </div>
