@@ -42,7 +42,7 @@ export const Category = () => {
               <CardContent className="flex flex-col items-center justify-center gap-2 p-3">
                 <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-zinc-100">
                   {cat.image_url && (
-                    <Image src={cat.image_url} alt={cat.name} fill className="object-cover" />
+                    <Image src={cat.image_url} alt={cat.name} fill className="object-cover"  unoptimized/>
                   )}
                 </div>
                 <span className="text-xs md:text-sm font-semibold text-black text-center line-clamp-1">

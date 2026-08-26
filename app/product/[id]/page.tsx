@@ -60,7 +60,7 @@ export default function ProductDetailPage() {
       <div className="max-w-3xl mx-auto px-4 py-8 md:py-12">
         <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-zinc-100 mb-6">
           {product.image_url && (
-            <Image src={product.image_url} alt={product.name} fill className="object-cover" />
+            <Image src={product.image_url} alt={product.name} fill className="object-cover"  unoptimized/>
           )}
           {!product.is_available && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">

@@ -30,7 +30,7 @@ export function ProductCard({ product }: ProductCardProps) {
       <div className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 h-full flex flex-col">
         <div className="relative w-full aspect-square bg-zinc-100">
           {product.image_url ? (
-            <Image src={product.image_url} alt={product.name} fill className="object-cover" />
+            <Image src={product.image_url} alt={product.name} fill className="object-cover"  unoptimized/>
           ) : (
             <div className="w-full h-full flex items-center justify-center text-black/30 text-sm">
               No image
