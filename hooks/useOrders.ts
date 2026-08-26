@@ -15,6 +15,12 @@ interface CreateOrderPayload {
   delivery_address: string;
   delivery_date?: string;
   delivery_time?: string;
+  payment_method?: 'online' | 'cod';
+}
+
+interface CreateOrderResponse {
+  data: Order;
+  orderToken: string;
 }
 
 export function useCreateOrder() {
@@ -29,16 +35,17 @@ export function useCreateOrder() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Failed to create order');
-      return json.data as Order;
+      return json as CreateOrderResponse;
     },
-    onSuccess: (newOrder) => {
+    onSuccess: ({ data: newOrder, orderToken }) => {
       queryClient.setQueryData(orderKeys.detail(newOrder.id), newOrder);
+      // Store the token right away so the confirmation page can fetch the
+      // order even for COD, which never touches /api/payments/init.
+      sessionStorage.setItem(`order_token_${newOrder.id}`, orderToken);
     },
   });
 }
 
-// Fetch single order — needs the order token once checkout is underway,
-// since there's no public order-listing/lookup without one.
 export function useOrder(id: string, orderToken?: string) {
   return useQuery({
     queryKey: orderKeys.detail(id),

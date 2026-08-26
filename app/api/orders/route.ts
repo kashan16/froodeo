@@ -1,4 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { signOrderToken } from '@/lib/orderToken';
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
 interface OrderItemInput {
@@ -15,6 +17,7 @@ export async function POST(request: NextRequest) {
     delivery_address,
     delivery_date,
     delivery_time,
+    payment_method,
   } = body as {
     customer_name: string;
     customer_phone: string;
@@ -22,6 +25,7 @@ export async function POST(request: NextRequest) {
     delivery_address: string;
     delivery_date?: string;
     delivery_time?: string;
+    payment_method?: 'online' | 'cod';
   };
 
   if (!customer_name?.trim() || !customer_phone?.trim()) {
@@ -39,6 +43,8 @@ export async function POST(request: NextRequest) {
   if (!Array.isArray(items) || items.length === 0) {
     return NextResponse.json({ error: 'items must be a non-empty array' }, { status: 400 });
   }
+
+  const method: 'online' | 'cod' = payment_method === 'cod' ? 'cod' : 'online';
 
   // Price is looked up server-side from the DB — NEVER trust a client-sent
   // unit_price, or anyone can checkout a ₹500 biryani for ₹1.
@@ -91,8 +97,13 @@ export async function POST(request: NextRequest) {
   }
 
   const deliveryCharge = subtotal >= 500 ? 0 : 40; // adjust to your real rule
-  const discount = 0; // wire up coupon logic here if/when you have it
+  const discount = 0;
   const total = subtotal + deliveryCharge - discount;
+
+  // COD orders skip the payment gateway entirely, so they go straight to
+  // 'confirmed' — there's nothing pending to wait on. Online orders stay
+  // 'pending' until Razorpay's webhook confirms the payment.
+  const initialStatus = method === 'cod' ? 'confirmed' : 'pending';
 
   const { data: order, error: orderError } = await supabaseAdmin
     .from('orders')
@@ -100,7 +111,8 @@ export async function POST(request: NextRequest) {
       user_id: null, // guest checkout
       customer_name: customer_name.trim(),
       customer_phone: customer_phone.trim(),
-      status: 'pending',
+      status: initialStatus,
+      payment_method: method,
       subtotal,
       delivery_charge: deliveryCharge,
       discount,
@@ -129,12 +141,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: itemsError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data: order }, { status: 201 });
+  // Mint the order token here (not just in payments/init) so COD orders
+  // — which never call payments/init — can still authenticate against
+  // GET /api/orders/:id on the confirmation page.
+  const orderToken = signOrderToken({
+    order_id: order.id,
+    guest_id: crypto.randomUUID(),
+  });
+
+  return NextResponse.json({ data: order, orderToken }, { status: 201 });
 }
 
 export async function GET(request: NextRequest) {
-  // Listing all orders needs admin auth, which doesn't exist yet.
-  // Disabled rather than left open — a public order list would leak
-  // every customer's name, phone, and address.
   return NextResponse.json({ error: 'Not available' }, { status: 405 });
 }

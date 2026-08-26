@@ -2,6 +2,8 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Footer } from '@/components/Footer';
+import { Navbar } from '@/components/Navbar';
 import { useCreateOrder } from '@/hooks/useOrders';
 import { useRazorpayPayment } from '@/hooks/useRazorpayPayment';
 import { useCart } from '@/lib/cart-context';
@@ -11,9 +13,11 @@ import { useState } from 'react';
 const DELIVERY_CHARGE_THRESHOLD = 500;
 const DELIVERY_CHARGE = 40;
 
+type PaymentMethod = 'online' | 'cod';
+
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, subtotal, clearCart } = useCart();
+  const { items, subtotal, updateQuantity, removeItem, clearCart } = useCart();
   const createOrder = useCreateOrder();
   const { initializePayment, isLoading: paymentLoading, error: paymentError } =
     useRazorpayPayment();
@@ -23,22 +27,34 @@ export default function CheckoutPage() {
   const [address, setAddress] = useState('');
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod');
   const [formError, setFormError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [placing, setPlacing] = useState(false);
 
   const deliveryCharge = subtotal >= DELIVERY_CHARGE_THRESHOLD ? 0 : DELIVERY_CHARGE;
   const total = subtotal + deliveryCharge;
 
+  const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <div className="flex flex-col min-h-screen bg-zinc-50">
+      <Navbar />
+      <div className="flex-1 pt-20">{children}</div>
+      <Footer />
+    </div>
+  );
+
   if (items.length === 0 && !orderId) {
     return (
-      <div className="px-4 py-24 text-center text-black/60">
-        Your cart is empty.
-        <div className="mt-4">
-          <Button onClick={() => router.push('/menu')} className="bg-orange-500 text-white">
-            Browse Menu
-          </Button>
+      <Wrapper>
+        <div className="px-4 py-24 text-center text-black/60">
+          Your cart is empty.
+          <div className="mt-4">
+            <Button onClick={() => router.push('/menu')} className="bg-orange-500 text-white">
+              Browse Menu
+            </Button>
+          </div>
         </div>
-      </div>
+      </Wrapper>
     );
   }
 
@@ -56,97 +72,164 @@ export default function CheckoutPage() {
       return;
     }
     setFormError(null);
+    setPlacing(true);
 
     try {
-      // Step 1: create the order server-side (price is recalculated there
-      // from the DB, not trusted from this cart state)
-      const order = await createOrder.mutateAsync({
+      const { data: order } = await createOrder.mutateAsync({
         customer_name: name.trim(),
         customer_phone: phone.trim(),
         items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
         delivery_address: address.trim(),
         delivery_date: deliveryDate || undefined,
         delivery_time: deliveryTime || undefined,
+        payment_method: paymentMethod,
       });
 
       setOrderId(order.id);
 
-      // Step 2: hand off to Razorpay via the shared hook — no duplicated
-      // checkout-loading logic here anymore.
-      await initializePayment({
-        orderId: order.id,
-        amount: order.total,
-        userPhone: phone,
-        userName: name,
-      });
+      if (paymentMethod === 'online') {
+        // Online orders still need the Razorpay handoff.
+        await initializePayment({
+          orderId: order.id,
+          amount: order.total,
+          userPhone: phone,
+          userName: name,
+        });
+      }
+      // COD orders are already 'confirmed' server-side — nothing else to do.
 
       clearCart();
       router.push(`/order-confirmation/${order.id}`);
     } catch (err) {
-      // initializePayment already sets its own `error` state for payment
-      // failures/cancellation; this catch covers order-creation failures
-      // and re-thrown payment errors so the button re-enables either way.
       const message = err instanceof Error ? err.message : 'Failed to place order';
       setFormError(message);
+    } finally {
+      setPlacing(false);
     }
   };
 
+  const isBusy = createOrder.isPending || placing || (paymentMethod === 'online' && paymentLoading);
+
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 md:py-12">
-      <h1 className="text-2xl font-bold text-black mb-6">Checkout</h1>
+    <Wrapper>
+      <div className="max-w-2xl mx-auto px-4 py-8 md:py-12">
+        <h1 className="text-2xl font-bold text-black mb-6">Checkout</h1>
 
-      <div className="bg-zinc-50 rounded-xl p-4 mb-6">
-        {items.map((item) => (
-          <div key={item.product_id} className="flex justify-between text-sm py-1">
-            <span>{item.name} × {item.quantity}</span>
-            <span>₹{item.price * item.quantity}</span>
+        <div className="bg-zinc-50 rounded-xl p-4 mb-6">
+          {items.map((item) => (
+            <div key={item.product_id} className="flex items-center justify-between text-sm py-2 border-b border-zinc-200 last:border-b-0">
+              <span className="flex-1">{item.name}</span>
+              <div className="flex items-center border border-zinc-300 rounded-full mx-3">
+                <button
+                  onClick={() => updateQuantity(item.product_id, item.quantity - 1)}
+                  className="w-7 h-7 flex items-center justify-center text-sm"
+                  aria-label={`Decrease quantity of ${item.name}`}
+                >
+                  −
+                </button>
+                <span className="w-6 text-center text-xs font-medium">{item.quantity}</span>
+                <button
+                  onClick={() => updateQuantity(item.product_id, item.quantity + 1)}
+                  className="w-7 h-7 flex items-center justify-center text-sm"
+                  aria-label={`Increase quantity of ${item.name}`}
+                >
+                  +
+                </button>
+              </div>
+              <span className="w-16 text-right">₹{item.price * item.quantity}</span>
+              <button
+                onClick={() => removeItem(item.product_id)}
+                className="ml-2 text-red-500 text-xs hover:underline"
+                aria-label={`Remove ${item.name}`}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <div className="border-t border-zinc-200 mt-2 pt-2 flex justify-between text-sm">
+            <span>Subtotal</span>
+            <span>₹{subtotal}</span>
           </div>
-        ))}
-        <div className="border-t border-zinc-200 mt-2 pt-2 flex justify-between text-sm">
-          <span>Subtotal</span>
-          <span>₹{subtotal}</span>
+          <div className="flex justify-between text-sm text-black/60">
+            <span>Delivery</span>
+            <span>{deliveryCharge === 0 ? 'Free' : `₹${deliveryCharge}`}</span>
+          </div>
+          <div className="flex justify-between font-bold mt-2 pt-2 border-t border-zinc-200">
+            <span>Total</span>
+            <span>₹{total}</span>
+          </div>
         </div>
-        <div className="flex justify-between text-sm text-black/60">
-          <span>Delivery</span>
-          <span>{deliveryCharge === 0 ? 'Free' : `₹${deliveryCharge}`}</span>
+
+        <div className="space-y-4">
+          <Input placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input
+            placeholder="Phone number"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+          />
+          <Input
+            placeholder="Delivery address"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+          />
+          <div className="flex gap-3">
+            <Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+            <Input type="time" value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} />
+          </div>
         </div>
-        <div className="flex justify-between font-bold mt-2 pt-2 border-t border-zinc-200">
-          <span>Total</span>
-          <span>₹{total}</span>
+
+        {/* Payment method selector */}
+        <div className="mt-6">
+          <h2 className="text-sm font-semibold text-black mb-3">Payment Method</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('cod')}
+              className={`text-left border rounded-xl p-4 transition-colors ${
+                paymentMethod === 'cod'
+                  ? 'border-orange-500 bg-orange-50'
+                  : 'border-zinc-200 bg-white'
+              }`}
+            >
+              <div className="font-medium text-black text-sm">Cash on Delivery</div>
+              <div className="text-xs text-black/60 mt-1">Pay when your order arrives</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('online')}
+              className={`text-left border rounded-xl p-4 transition-colors ${
+                paymentMethod === 'online'
+                  ? 'border-orange-500 bg-orange-50'
+                  : 'border-zinc-200 bg-white'
+              }`}
+            >
+              <div className="font-medium text-black text-sm">Pay Online</div>
+              <div className="text-xs text-black/60 mt-1">UPI, Card, Netbanking</div>
+            </button>
+          </div>
         </div>
+
+        {(formError || paymentError) && (
+          <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
+            {formError || paymentError}
+          </div>
+        )}
+
+        <Button
+          onClick={handlePlaceOrder}
+          isDisabled={isBusy}
+          className="w-full mt-6 bg-orange-500 hover:bg-orange-600 text-white rounded-full h-12"
+        >
+          {createOrder.isPending
+            ? 'Placing order...'
+            : paymentMethod === 'online' && paymentLoading
+            ? 'Processing...'
+            : paymentMethod === 'cod'
+            ? `Place Order — ₹${total} (COD)`
+            : `Pay ₹${total}`}
+        </Button>
       </div>
-
-      <div className="space-y-4">
-        <Input placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
-        <Input
-          placeholder="Phone number"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-        />
-        <Input
-          placeholder="Delivery address"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-        />
-        <div className="flex gap-3">
-          <Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
-          <Input type="time" value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} />
-        </div>
-      </div>
-
-      {(formError || paymentError) && (
-        <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
-          {formError || paymentError}
-        </div>
-      )}
-
-      <Button
-        onClick={handlePlaceOrder}
-        isDisabled={createOrder.isPending || paymentLoading}
-        className="w-full mt-6 bg-orange-500 hover:bg-orange-600 text-white rounded-full h-12"
-      >
-        {createOrder.isPending ? 'Placing order...' : paymentLoading ? 'Processing...' : `Pay ₹${total}`}
-      </Button>
-    </div>
+    </Wrapper>
   );
 }
