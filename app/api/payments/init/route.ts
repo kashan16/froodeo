@@ -1,38 +1,43 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getExistingPayment } from '@/lib/idempotency';
+import { getVerifiedOrderTokenFromRequest, signOrderToken } from '@/lib/orderToken';
 import { createRazorpayOrder } from '@/lib/razorpay';
-import {
-  generateIdempotencyKey,
-  getIdempotencyResponse,
-  setIdempotencyResponse,
-} from '@/lib/idempotency';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import crypto from 'crypto';
+import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { order_id, user_id } = body;
+  const { order_id } = body;
 
-  if (!order_id || !user_id) {
-    return NextResponse.json(
-      { error: 'order_id and user_id are required' },
-      { status: 400 }
-    );
+  if (!order_id) {
+    return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
   }
 
-  // Generate idempotency key
-  const idempotencyKey = generateIdempotencyKey(order_id, user_id);
+  const existingToken = getVerifiedOrderTokenFromRequest(request);
+  const guestId =
+    existingToken && existingToken.order_id === order_id
+      ? existingToken.guest_id
+      : crypto.randomUUID();
 
-  // Check if this payment initialization already exists
-  const existingResponse = getIdempotencyResponse(idempotencyKey);
-  if (existingResponse) {
-    return NextResponse.json(existingResponse);
+  // Idempotency: reuse an existing non-failed payment attempt instead of
+  // creating a duplicate Razorpay order for the same order_id.
+  const existingPayment = await getExistingPayment(order_id);
+  if (existingPayment) {
+    const orderToken = signOrderToken({ order_id, guest_id: guestId });
+    return NextResponse.json({
+      razorpayKeyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+      razorpayOrderId: existingPayment.razorpay_order_id,
+      amount: existingPayment.amount,
+      orderId: order_id,
+      paymentId: existingPayment.id,
+      orderToken,
+    });
   }
 
-  // Fetch order details
   const { data: order, error: orderError } = await supabaseAdmin
     .from('orders')
     .select('*')
     .eq('id', order_id)
-    .eq('user_id', user_id)
     .single();
 
   if (orderError || !order) {
@@ -47,13 +52,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Create Razorpay order
     const razorpayOrder = await createRazorpayOrder(
       order.total,
       `order_${order_id}_${Date.now()}`
     );
 
-    // Store Razorpay order ID in database for webhook verification
     const { data: payment, error: paymentError } = await supabaseAdmin
       .from('payments')
       .insert({
@@ -70,19 +73,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: paymentError.message }, { status: 500 });
     }
 
-    const response = {
+    const orderToken = signOrderToken({ order_id, guest_id: guestId });
+
+    return NextResponse.json({
       razorpayKeyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
       razorpayOrderId: razorpayOrder.id,
       amount: order.total * 100,
       orderId: order_id,
       paymentId: payment.id,
-      userId: user_id,
-    };
-
-    // Store in idempotency store
-    setIdempotencyResponse(idempotencyKey, response);
-
-    return NextResponse.json(response);
+      orderToken,
+    });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || 'Failed to initialize payment' },

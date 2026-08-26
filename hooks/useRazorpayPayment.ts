@@ -1,6 +1,5 @@
-import { useState, useCallback } from 'react';
-import { useCreatePayment, useVerifyPayment } from './usePayments';
-import { useUpdateOrder } from './useOrders';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useCallback, useState } from 'react';
 
 declare global {
   interface Window {
@@ -8,128 +7,133 @@ declare global {
   }
 }
 
-interface UseRazorpayPaymentProps {
+interface InitializePaymentArgs {
   orderId: string;
-  userId: string;
-  amount: number;
-  userEmail: string;
-  userPhone: string;
+  amount: number; // rupees, not paise
+  userEmail?: string;
+  userPhone?: string;
+  userName?: string;
 }
 
-export function useRazorpayPayment({
-  orderId,
-  userId,
-  amount,
-  userEmail,
-  userPhone,
-}: UseRazorpayPaymentProps) {
+export function useRazorpayPayment() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const updateOrder = useUpdateOrder(orderId);
-  const verifyPayment = useVerifyPayment('');
-
-  const initializePayment = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Step 1: Initialize payment on backend
-      const initResponse = await fetch('/api/payments/init', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: orderId, user_id: userId }),
-      });
-
-      if (!initResponse.ok) {
-        throw new Error('Failed to initialize payment');
+  const loadRazorpayScript = useCallback((): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (window.Razorpay) {
+        resolve();
+        return;
       }
-
-      const {
-        razorpayKeyId,
-        razorpayOrderId,
-        paymentId,
-      } = await initResponse.json();
-
-      // Step 2: Load Razorpay script
       const script = document.createElement('script');
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
       script.async = true;
-
-      script.onload = () => {
-        // Step 3: Open Razorpay modal
-        const options = {
-          key: razorpayKeyId,
-          amount: amount * 100, // amount in paise
-          currency: 'INR',
-          name: 'Your Store Name',
-          description: `Order #${orderId}`,
-          order_id: razorpayOrderId,
-          prefill: {
-            name: 'Customer Name', // Get from user context
-            email: userEmail,
-            contact: userPhone,
-          },
-          handler: async (response: any) => {
-            await handlePaymentSuccess(response, paymentId);
-          },
-          modal: {
-            ondismiss: () => {
-              setIsLoading(false);
-              setError('Payment cancelled');
-            },
-          },
-        };
-
-        const razorpay = new window.Razorpay(options);
-        razorpay.open();
-      };
-
-      script.onerror = () => {
-        setError('Failed to load Razorpay');
-        setIsLoading(false);
-      };
-
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Razorpay'));
       document.body.appendChild(script);
-    } catch (err: any) {
-      setError(err.message || 'Payment initialization failed');
-      setIsLoading(false);
-    }
-  }, [orderId, userId, amount, userEmail, userPhone]);
+    });
+  }, []);
 
-  const handlePaymentSuccess = useCallback(
-    async (response: any, paymentId: string) => {
+  const verifyPayment = useCallback(
+    async (
+      paymentId: string,
+      orderToken: string,
+      razorpayResponse: {
+        razorpay_payment_id: string;
+        razorpay_order_id: string;
+        razorpay_signature: string;
+      }
+    ) => {
+      const verifyResponse = await fetch(`/api/payments/${paymentId}/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${orderToken}`,
+        },
+        body: JSON.stringify(razorpayResponse),
+      });
+
+      const body = await verifyResponse.json().catch(() => ({}));
+      if (!verifyResponse.ok) {
+        throw new Error(body.error || 'Payment verification failed');
+      }
+      return body.data;
+    },
+    []
+  );
+
+  const initializePayment = useCallback(
+    async ({ orderId, userEmail, userPhone, userName }: InitializePaymentArgs) => {
+      setIsLoading(true);
+      setError(null);
+
       try {
-        // Verify payment signature on backend
-        const verifyResponse = await fetch(`/api/payments/${paymentId}/verify`, {
+        const storedToken = sessionStorage.getItem(`order_token_${orderId}`);
+
+        const initResponse = await fetch('/api/payments/init', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_signature: response.razorpay_signature,
-          }),
+          headers: {
+            'Content-Type': 'application/json',
+            ...(storedToken ? { Authorization: `Bearer ${storedToken}` } : {}),
+          },
+          body: JSON.stringify({ order_id: orderId }),
         });
 
-        if (!verifyResponse.ok) {
-          throw new Error('Payment verification failed');
+        const initData = await initResponse.json().catch(() => ({}));
+        if (!initResponse.ok) {
+          throw new Error(initData.error || 'Failed to initialize payment');
         }
 
-        const verifiedPayment = await verifyResponse.json();
+        const { razorpayKeyId, razorpayOrderId, amount: paiseAmount, paymentId, orderToken } =
+          initData;
 
-        // Update order status
-        await updateOrder.mutateAsync({
-          status: 'confirmed',
+        sessionStorage.setItem(`order_token_${orderId}`, orderToken);
+
+        await loadRazorpayScript();
+
+        return await new Promise((resolve, reject) => {
+          const options = {
+            key: razorpayKeyId,
+            amount: paiseAmount,
+            currency: 'INR',
+            name: 'Froodeo',
+            description: `Order #${orderId}`,
+            order_id: razorpayOrderId,
+            prefill: {
+              name: userName,
+              email: userEmail,
+              contact: userPhone,
+            },
+            handler: async (response: any) => {
+              try {
+                const verified = await verifyPayment(paymentId, orderToken, response);
+                setIsLoading(false);
+                resolve(verified);
+              } catch (err: any) {
+                setError(err.message || 'Payment verification failed');
+                setIsLoading(false);
+                reject(err);
+              }
+            },
+            modal: {
+              ondismiss: () => {
+                setIsLoading(false);
+                setError('Payment cancelled');
+                reject(new Error('Payment cancelled'));
+              },
+            },
+          };
+
+          const razorpay = new window.Razorpay(options);
+          razorpay.open();
         });
-
-        setIsLoading(false);
-        return verifiedPayment;
       } catch (err: any) {
-        setError(err.message || 'Payment verification failed');
+        setError(err.message || 'Payment initialization failed');
         setIsLoading(false);
+        throw err;
       }
     },
-    [orderId, updateOrder]
+    [loadRazorpayScript, verifyPayment]
   );
 
   return {

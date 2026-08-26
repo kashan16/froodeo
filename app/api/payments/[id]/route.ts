@@ -1,42 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { getVerifiedOrderTokenFromRequest } from '@/lib/orderToken';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { NextRequest, NextResponse } from 'next/server';
 
-// GET /api/payments?order_id=
-export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const orderId = searchParams.get('order_id');
+type Params = Promise<{ id: string }>;
 
-  let query = supabaseAdmin.from('payments').select('*');
-  if (orderId) query = query.eq('order_id', orderId);
+// GET /api/payments/[id] — fetch a single payment by its own id,
+// scoped to the caller's token.
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Params }
+) {
+  const { id } = await params;
 
-  const { data, error } = await query.order('created_at', { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-  return NextResponse.json({ data });
-}
-
-// POST /api/payments (create a payment record, typically after Razorpay order creation)
-export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { order_id, razorpay_order_id, amount, currency = 'INR', status = 'created' } = body;
-
-  if (!order_id || !razorpay_order_id || amount === undefined) {
-    return NextResponse.json(
-      { error: 'order_id, razorpay_order_id, and amount are required' },
-      { status: 400 }
-    );
+  const tokenPayload = getVerifiedOrderTokenFromRequest(request);
+  if (!tokenPayload) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data: payment, error } = await supabaseAdmin
     .from('payments')
-    .insert({ order_id, razorpay_order_id, amount, currency, status })
-    .select()
+    .select('*')
+    .eq('id', id)
     .single();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error || !payment) {
+    return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
   }
-  return NextResponse.json({ data }, { status: 201 });
+
+  if (payment.order_id !== tokenPayload.order_id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  return NextResponse.json({ data: payment });
 }

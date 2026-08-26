@@ -1,42 +1,30 @@
-import crypto from 'crypto';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 /**
- * Generate idempotency key from order and payment intent
- * Ensures duplicate requests are handled gracefully
+ * Look up an existing, still-usable payment attempt for this order.
+ * Replaces the old in-memory Map, which does not work across
+ * serverless invocations/instances — this is backed by the `payments`
+ * table itself, so it's correct regardless of how many instances
+ * are running.
+ *
+ * "Still usable" = not 'failed'. A 'created' or 'captured' payment
+ * means we should NOT create a new Razorpay order — either the
+ * attempt is still in flight, or it already succeeded.
  */
-export function generateIdempotencyKey(orderId: string, userId: string): string {
-  return crypto
-    .createHash('sha256')
-    .update(`${orderId}-${userId}-payment`)
-    .digest('hex');
-}
+export async function getExistingPayment(orderId: string) {
+  const { data, error } = await supabaseAdmin
+    .from('payments')
+    .select('*')
+    .eq('order_id', orderId)
+    .neq('status', 'failed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-/**
- * Store idempotency key with response to prevent duplicate processing
- * You can use Redis, database, or in-memory store
- */
-export const idempotencyStore = new Map<
-  string,
-  { response: any; timestamp: number }
->();
-
-export function getIdempotencyResponse(key: string) {
-  const stored = idempotencyStore.get(key);
-
-  if (!stored) return null;
-
-  // Check if response is older than 24 hours
-  if (Date.now() - stored.timestamp > 24 * 60 * 60 * 1000) {
-    idempotencyStore.delete(key);
+  if (error) {
+    console.error('Failed to check existing payment:', error);
     return null;
   }
 
-  return stored.response;
-}
-
-export function setIdempotencyResponse(key: string, response: any) {
-  idempotencyStore.set(key, {
-    response,
-    timestamp: Date.now(),
-  });
+  return data;
 }
