@@ -1,3 +1,6 @@
+import { Footer } from "@/components/Footer";
+import { Navbar } from "@/components/Navbar";
+import { ToasterMount } from "@/components/ToasterMount";
 import { CartProvider } from "@/lib/cart-context";
 import { QueryProvider } from "@/lib/query-provider";
 import { cn } from "@/lib/utils";
@@ -40,8 +43,13 @@ export default function RootLayout({
       className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", manropeSans.variable, poppinsHeading.variable)}
     >
       <body className="min-h-full flex flex-col">
+        <ToasterMount/>
         <QueryProvider>
-          <CartProvider>{children}</CartProvider>
+          <CartProvider>
+            <Navbar/>
+            <main className="flex-1 pt-16">{children}</main>
+            <Footer/>
+            </CartProvider>
         </QueryProvider>
       </body>
     </html>

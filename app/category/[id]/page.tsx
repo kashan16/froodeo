@@ -1,11 +1,9 @@
 'use client';
 
-import { useParams } from "next/navigation";
-import { Footer } from "@/components/Footer";
-import { Navbar } from "@/components/Navbar";
 import { ProductCard } from "@/components/ui/product-card";
 import { useCategory } from "@/hooks/useCategories";
 import { useProducts } from "@/hooks/useProducts";
+import { useParams } from "next/navigation";
 
 export default function CategoryPage() {
   const { id } = useParams<{ id: string }>();
@@ -14,7 +12,6 @@ export default function CategoryPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50">
-      <Navbar />
 
       <div className="max-w-6xl mx-auto w-full px-4 pt-24 pb-8 flex-1">
         <h1 className="text-2xl font-bold text-black mb-6">{category?.name ?? 'Category'}</h1>
@@ -41,8 +38,6 @@ export default function CategoryPage() {
           </div>
         )}
       </div>
-
-      <Footer />
     </div>
   );
 }

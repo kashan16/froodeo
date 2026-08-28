@@ -1,5 +1,5 @@
 import { User } from '@/app/api/types';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 
 const API_URL = '/api/users';
@@ -7,6 +7,7 @@ const API_URL = '/api/users';
 const userKeys = {
   all: ['users'] as const,
   lists: () => [...userKeys.all, 'list'] as const,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   list: (filters: Record<string, any>) =>
     [...userKeys.lists(), { ...filters }] as const,
   details: () => [...userKeys.all, 'detail'] as const,

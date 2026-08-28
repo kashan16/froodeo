@@ -1,17 +1,35 @@
+'use client';
+
+import { ActionButton } from "@/components/ui/action-button";
+import { simulateDelay } from "@/lib/simulate-display";
+import { ArrowRight, ChevronDown, Flame, MapPin, ShieldCheck } from "lucide-react";
 import Image from "next/image";
-import { MapPin, ChevronDown, Share2, Clock, ArrowRight, ShieldCheck, Flame, Truck } from "lucide-react";
+import { useRouter } from "next/navigation";
+
 
 export const Hero = () => {
+    const router = useRouter();
+
     return (
-        <section className="relative w-full pt-8">
+        <section className="relative w-full">
             {/* Hero background */}
             <div className="relative min-w-full h-[500px] md:h-[600px] lg:h-[700px]">
+                {/* Desktop/tablet image */}
                 <Image
                     src="/hero.png"
                     alt="Lucknowi Biryani hero background"
                     fill
                     priority
-                    className="fill"
+                    className="hidden md:block object-cover"
+                />
+
+                {/* Mobile image */}
+                <Image
+                    src="/heromob.png"
+                    alt="Lucknowi Biryani hero background"
+                    fill
+                    priority
+                    className="block md:hidden object-cover"
                 />
 
                 {/* Dark overlay for text legibility */}
@@ -60,10 +78,21 @@ export const Hero = () => {
                         </div>
 
                         {/* CTA */}
-                        <button className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 transition-colors text-white font-semibold px-6 py-3 rounded-lg">
-                            Order Now
-                            <ArrowRight size={18} />
-                        </button>
+                        <ActionButton
+                            onAction={async () => {
+                                await simulateDelay(400);
+                                router.push('/menu');
+                            }}
+                            idleLabel={
+                                <span className="flex items-center gap-2">
+                                    Order Now
+                                    <ArrowRight size={18} />
+                                </span>
+                            }
+                            loadingLabel="Loading menu..."
+                            successTitle="Let's go!"
+                            className="w-auto px-6 rounded-lg"
+                        />
                     </div>
 
                     {/* Carousel controls */}

@@ -1,11 +1,9 @@
 'use client';
 
-import { useState } from "react";
-import { Footer } from "@/components/Footer";
-import { Navbar } from "@/components/Navbar";
 import { ProductCard } from "@/components/ui/product-card";
 import { useCategories } from "@/hooks/useCategories";
 import { useProducts } from "@/hooks/useProducts";
+import { useState } from "react";
 
 export default function MenuPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
@@ -17,8 +15,6 @@ export default function MenuPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50">
-      <Navbar />
-
       <div className="max-w-6xl mx-auto w-full px-4 pt-24 pb-8 flex-1">
         <h1 className="text-2xl font-bold text-black mb-6">Our Menu</h1>
 
@@ -72,8 +68,6 @@ export default function MenuPage() {
           </div>
         )}
       </div>
-
-      <Footer />
     </div>
   );
 }
