@@ -1,8 +1,6 @@
 'use client';
 
-import { Navbar } from '@/components/Navbar';
-import { Button } from '@/components/ui/button';
-import Link from 'next/link';
+import { ActionButton } from '@/components/ui/action-button';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -67,15 +65,20 @@ export default function OrderConfirmationPage() {
   if (error === 'no-token') {
     return (
       <div className="max-w-md mx-auto px-4 py-24 text-center">
-        <Navbar/>
         <h1 className="text-xl font-bold text-black mb-2">Order details unavailable</h1>
         <p className="text-black/60 mb-6">
           We can&apos;t find this order in your current session. If you just placed it, check the
           confirmation SMS/email. Otherwise, this link may have been opened on a different device.
         </p>
-        <Button onClick={() => router.push('/menu')} className="bg-orange-500 text-white">
-          Back to Menu
-        </Button>
+        <ActionButton
+          onAction={async () => {
+            router.push('/menu');
+          }}
+          idleLabel="Back to Menu"
+          loadingLabel="Redirecting..."
+          successTitle="Heading to menu"
+          className="max-w-xs mx-auto"
+        />
       </div>
     );
   }
@@ -99,7 +102,6 @@ export default function OrderConfirmationPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 md:py-12">
-      <Navbar/>
       <div className="text-center mb-8">
         <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center mx-auto mb-4">
           <span className="text-3xl">✓</span>
@@ -147,11 +149,14 @@ export default function OrderConfirmationPage() {
         )}
       </div>
 
-      <Link href="/menu">
-        <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-full h-12">
-          Order More
-        </Button>
-      </Link>
+      <ActionButton
+        onAction={async () => {
+          router.push('/menu');
+        }}
+        idleLabel="Order More"
+        loadingLabel="Redirecting..."
+        successTitle="Heading to menu"
+      />
     </div>
   );
 }

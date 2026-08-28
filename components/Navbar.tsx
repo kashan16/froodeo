@@ -7,7 +7,6 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { useCart } from "@/lib/cart-context";
 import CartIcon from "./ui/cart-icon";
 import { Input } from "./ui/input";
-import MagnifierIcon from "./ui/magnifier-icon";
 import XIcon from "./ui/x-icon";
 
 const NavbarItem = [
@@ -137,19 +136,6 @@ export const Navbar = () => {
                             <XIcon className="h-5 w-5 text-white hover:text-orange-500 transition-colors" />
                         </button>
                     </div>
-
-                    <button
-                        ref={searchButtonRef}
-                        onClick={handleSearchClick}
-                        className="relative flex items-center justify-center h-9 w-9"
-                        aria-label="Open search"
-                    >
-                        <span
-                            ref={searchFillRef}
-                            className="absolute inset-0 rounded-full bg-orange-500 opacity-0 pointer-events-none"
-                        />
-                        <MagnifierIcon className="relative h-5 w-5 text-white" />
-                    </button>
                 </div>
 
                 {/* Cart — links to /checkout since there's no separate cart drawer built yet */}
