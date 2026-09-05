@@ -9,7 +9,6 @@ declare global {
 
 interface InitializePaymentArgs {
   orderId: string;
-  amount: number; // rupees, not paise
   userEmail?: string;
   userPhone?: string;
   userName?: string;
@@ -29,7 +28,7 @@ export function useRazorpayPayment() {
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
       script.async = true;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Razorpay'));
+      script.onerror = () => reject(new Error('Failed to load payment gateway. Check your connection and try again.'));
       document.body.appendChild(script);
     });
   }, []);

@@ -1,4 +1,4 @@
-import { getVerifiedOrderTokenFromRequest } from '@/lib/orderToken';
+import { canAccessOrder } from '@/lib/orderAccess';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -6,21 +6,23 @@ import { NextRequest, NextResponse } from 'next/server';
 // scopes results to that token's order_id. The order_id query param,
 // if present, must match the token — it can no longer be used to
 // browse other orders' payments.
+// app/api/payments/route.ts — replace the top of GET
 export async function GET(request: NextRequest) {
-  const tokenPayload = getVerifiedOrderTokenFromRequest(request);
-  if (!tokenPayload) {
+  const orderId = request.nextUrl.searchParams.get('order_id');
+  if (!orderId) {
+    return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
+  }
+  if (!(await canAccessOrder(request, orderId))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { data, error } = await supabaseAdmin
     .from('payments')
     .select('*')
-    .eq('order_id', tokenPayload.order_id)
+    .eq('order_id', orderId)
     .order('created_at', { ascending: false });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ data });
 }
 

@@ -1,3 +1,5 @@
+import { awardLoyaltyPoints } from '@/lib/loyalty';
+import { completeReferralIfEligible } from '@/lib/referrel';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
@@ -101,8 +103,14 @@ async function handlePaymentSuccess(payload: any) {
     .update({ status: 'confirmed' })
     .eq('id', existingPayment.order_id);
 
+  await awardLoyaltyPoints(existingPayment.order_id);
   if (updateOrderError) {
     console.error('Failed to update order:', updateOrderError);
+  }
+
+  if (existingPayment.order_id) {
+    const { data: orderRow } = await supabaseAdmin.from('orders').select('user_id').eq('id', existingPayment.order_id).single();
+    if (orderRow?.user_id) await completeReferralIfEligible(orderRow.user_id);
   }
 
   // TODO: Send confirmation email to user

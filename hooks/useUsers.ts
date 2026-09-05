@@ -1,100 +1,77 @@
 import { User } from '@/app/api/types';
+import { apiFetch } from '@/context/AuthContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-
 
 const API_URL = '/api/users';
 
 const userKeys = {
   all: ['users'] as const,
   lists: () => [...userKeys.all, 'list'] as const,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  list: (filters: Record<string, any>) =>
-    [...userKeys.lists(), { ...filters }] as const,
-  details: () => [...userKeys.all, 'detail'] as const,
-  detail: (id: string) => [...userKeys.details(), id] as const,
+  detail: (id: string) => [...userKeys.all, 'detail', id] as const,
 };
 
-// Fetch all users
+async function parseOrThrow(res: Response, fallback: string) {
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || fallback);
+  return json;
+}
+
+// Admin-only listing — relies on the admin_token cookie.
 export function useUsers() {
   return useQuery({
     queryKey: userKeys.lists(),
     queryFn: async () => {
-      const res = await fetch(API_URL);
-      if (!res.ok) throw new Error('Failed to fetch users');
-      const json = await res.json();
+      const res = await fetch(API_URL, { credentials: 'include' });
+      const json = await parseOrThrow(res, 'Failed to fetch users');
       return json.data as User[];
     },
   });
 }
 
-// Fetch single user
+// Fetch any user by id — works for an admin (cookie) or a user fetching
+// their own id (access token). For "my own profile", prefer useMe()
+// instead, which doesn't require knowing your own id up front.
 export function useUser(id: string) {
   return useQuery({
     queryKey: userKeys.detail(id),
     queryFn: async () => {
-      const res = await fetch(`${API_URL}/${id}`);
-      if (!res.ok) throw new Error('Failed to fetch user');
-      const json = await res.json();
+      const res = await apiFetch(`${API_URL}/${id}`);
+      const json = await parseOrThrow(res, 'Failed to fetch user');
       return json.data as User;
     },
     enabled: !!id,
   });
 }
 
-// Create user (for auth signup)
-export function useCreateUser() {
-  const queryClient = useQueryClient();
+// useCreateUser removed — POST /api/users is disabled (405). Accounts are
+// only ever created inside /api/auth/verify-otp, via useAuth().verifyOtp().
 
-  return useMutation({
-    mutationFn: async (body: Partial<User>) => {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('Failed to create user');
-      const json = await res.json();
-      return json.data as User;
-    },
-    onSuccess: (newUser) => {
-      queryClient.invalidateQueries({ queryKey: userKeys.lists() });
-      queryClient.setQueryData(userKeys.detail(newUser.id), newUser);
-    },
-  });
-}
-
-// Update user
+// Self-only — the route rejects anyone whose access token doesn't match
+// :id. Only `name` is editable here; phone is the OTP-verified identity
+// and isn't changeable through this endpoint.
 export function useUpdateUser(id: string) {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: async (body: Partial<User>) => {
-      const res = await fetch(`${API_URL}/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('Failed to update user');
-      const json = await res.json();
+    mutationFn: async (body: { name: string }) => {
+      const res = await apiFetch(`${API_URL}/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      const json = await parseOrThrow(res, 'Failed to update user');
       return json.data as User;
     },
     onSuccess: (updatedUser) => {
       queryClient.invalidateQueries({ queryKey: userKeys.lists() });
-      queryClient.setQueryData(userKeys.detail(id), updatedUser);
+      queryClient.setQueryData(userKeys.detail(updatedUser.id), updatedUser);
+      queryClient.setQueryData(['me'], updatedUser);
     },
   });
 }
 
-// Delete user
+// Admin-only.
 export function useDeleteUser() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`${API_URL}/${id}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error('Failed to delete user');
+      const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to delete user');
       return id;
     },
     onSuccess: (id) => {
