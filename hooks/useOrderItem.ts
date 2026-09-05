@@ -1,23 +1,26 @@
 import { OrderItem } from '@/app/api/types';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { orderScopedFetch } from '@/lib/orderFetch';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 const BASE_URL = '/api/orders';
 
 const orderItemKeys = {
   all: ['orderItems'] as const,
-  byOrder: (orderId: string) =>
-    [...orderItemKeys.all, 'byOrder', orderId] as const,
-  detail: (id: string) => [...orderItemKeys.all, 'detail', id] as const,
+  byOrder: (orderId: string) => [...orderItemKeys.all, 'byOrder', orderId] as const,
 };
 
-// Fetch order items by order ID
+async function parseOrThrow(res: Response, fallback: string) {
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || fallback);
+  return json;
+}
+
 export function useOrderItems(orderId: string) {
   return useQuery({
     queryKey: orderItemKeys.byOrder(orderId),
     queryFn: async () => {
-      const res = await fetch(`${BASE_URL}/${orderId}/items`);
-      if (!res.ok) throw new Error('Failed to fetch order items');
-      const json = await res.json();
+      const res = await orderScopedFetch(orderId, `${BASE_URL}/${orderId}/items`);
+      const json = await parseOrThrow(res, 'Failed to fetch order items');
       return json.data as OrderItem[];
     },
     enabled: !!orderId,
@@ -27,70 +30,67 @@ export function useOrderItems(orderId: string) {
 interface AddOrderItemPayload {
   product_id: string;
   quantity: number;
-  unit_price: number;
-  options?: Record<string, any>;
+  options?: Record<string, unknown>;
+  // unit_price removed — the server looks it up from `products`, a
+  // client-supplied price is no longer accepted (and would be ignored
+  // even if sent).
 }
 
-// Add item to order
 export function useAddOrderItem(orderId: string) {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: async (body: AddOrderItemPayload) => {
-      const res = await fetch(`${BASE_URL}/${orderId}/items`, {
+      const res = await orderScopedFetch(orderId, `${BASE_URL}/${orderId}/items`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error('Failed to add order item');
-      const json = await res.json();
+      const json = await parseOrThrow(res, 'Failed to add order item');
       return json.data as OrderItem;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orderItemKeys.byOrder(orderId) });
+      queryClient.invalidateQueries({ queryKey: ['orders', 'detail', orderId] }); // totals changed
     },
   });
 }
 
-// Update order item
-export function useUpdateOrderItem(itemId: string) {
-  const queryClient = useQueryClient();
+interface UpdateOrderItemPayload {
+  quantity: number;
+  options?: Record<string, unknown>;
+}
 
+// orderId is now required — the route (PUT /api/order-items/:id) has no
+// order_id in its URL, and the client needs to know which order this item
+// belongs to in order to pick the right auth token to send.
+export function useUpdateOrderItem(itemId: string, orderId: string) {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: Partial<OrderItem>) => {
-      const res = await fetch(`/api/order-items/${itemId}`, {
+    mutationFn: async (body: UpdateOrderItemPayload) => {
+      const res = await orderScopedFetch(orderId, `/api/order-items/${itemId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error('Failed to update order item');
-      const json = await res.json();
+      const json = await parseOrThrow(res, 'Failed to update order item');
       return json.data as OrderItem;
     },
-    onSuccess: (updatedItem) => {
-      queryClient.invalidateQueries({
-        queryKey: orderItemKeys.byOrder(updatedItem.order_id),
-      });
-      queryClient.setQueryData(orderItemKeys.detail(itemId), updatedItem);
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderItemKeys.byOrder(orderId) });
+      queryClient.invalidateQueries({ queryKey: ['orders', 'detail', orderId] });
     },
   });
 }
 
-// Delete order item
-export function useDeleteOrderItem() {
+export function useDeleteOrderItem(orderId: string) {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: async (itemId: string) => {
-      const res = await fetch(`/api/order-items/${itemId}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error('Failed to delete order item');
+      const res = await orderScopedFetch(orderId, `/api/order-items/${itemId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to delete order item');
       return itemId;
     },
-    onSuccess: (itemId) => {
-      queryClient.removeQueries({ queryKey: orderItemKeys.detail(itemId) });
-      queryClient.invalidateQueries({ queryKey: orderItemKeys.all });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderItemKeys.byOrder(orderId) });
+      queryClient.invalidateQueries({ queryKey: ['orders', 'detail', orderId] });
     },
   });
 }

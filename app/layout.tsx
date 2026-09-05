@@ -1,6 +1,7 @@
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
 import { ToasterMount } from "@/components/ToasterMount";
+import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/lib/cart-context";
 import { QueryProvider } from "@/lib/query-provider";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <ToasterMount/>
+        <AuthProvider>
         <QueryProvider>
           <CartProvider>
             <Navbar/>
@@ -51,6 +53,7 @@ export default function RootLayout({
             <Footer/>
             </CartProvider>
         </QueryProvider>
+        </AuthProvider>
       </body>
     </html>
   );
