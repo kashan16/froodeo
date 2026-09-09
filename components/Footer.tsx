@@ -2,11 +2,9 @@ import Link from "next/link";
 import {
   FaFacebook,
   FaInstagram,
-  FaWhatsapp,
-  FaYoutube,
-  FaPhoneAlt,
-  FaEnvelope,
   FaMapMarkerAlt,
+  FaPhoneAlt,
+  FaWhatsapp
 } from "react-icons/fa";
 
 const CompanyInfo = [
@@ -27,25 +25,19 @@ const SocialMediaLinks = [
   {
     name: "Facebook",
     icon: FaFacebook,
-    href: "https://www.facebook.com/froodeo",
+    href: "https://www.facebook.com/yaseen.171",
     color: "#1877F2",
   },
   {
     name: "Instagram",
     icon: FaInstagram,
-    href: "https://www.instagram.com/froodeo",
+    href: "https://www.instagram.com/froodeo_06?igsi=MThlbXM3aHBrZGFnNw==",
     color: "#E1306C",
-  },
-  {
-    name: "YouTube",
-    icon: FaYoutube,
-    href: "https://www.youtube.com/froodeo",
-    color: "#FF0000",
   },
   {
     name: "WhatsApp",
     icon: FaWhatsapp,
-    href: "https://wa.me/911234567890",
+    href: "https://wa.me/message/5E3HAIQX53FQO1",
     color: "#25D366",
   },
 ];
@@ -125,15 +117,7 @@ export const Footer = () => {
                 className="shrink-0"
                 size={14}
               />
-              <span>+91 123 456 7890</span>
-            </li>
-
-            <li className="flex items-center gap-2 text-sm text-gray-400">
-              <FaEnvelope
-                className="shrink-0"
-                size={14}
-              />
-              <span>hello@froodeo.in</span>
+              <span>+91 91942 09551</span>
             </li>
 
             <li className="flex items-start gap-2 text-sm text-gray-400">
