@@ -31,7 +31,7 @@ export const Hero = () => {
     const [selectedIndex, setSelectedIndex] = useState(0);
 
     const scrollTo = useCallback(
-        (index) => emblaApi && emblaApi.scrollTo(index),
+        (index: number) => emblaApi && emblaApi.scrollTo(index),
         [emblaApi]
     );
 
@@ -42,6 +42,7 @@ export const Hero = () => {
 
     useEffect(() => {
         if (!emblaApi) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         onSelect();
         emblaApi.on("select", onSelect);
         emblaApi.on("reInit", onSelect);
