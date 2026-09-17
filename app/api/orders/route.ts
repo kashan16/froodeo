@@ -1,5 +1,6 @@
 import { getUserFromRequest } from '@/lib/auth';
 import { recordCouponRedemption, validateCoupon } from '@/lib/coupon';
+import { computeDeliveryCharge, computeTax, getDeliverySettings, getEarliestDeliveryDate } from '@/lib/deliverySettings';
 import { awardLoyaltyPoints } from '@/lib/loyalty';
 import { signOrderToken } from '@/lib/orderToken';
 import { completeReferralIfEligible } from '@/lib/referrel';
@@ -26,6 +27,8 @@ export async function POST(request: NextRequest) {
     payment_method,
     coupon_code,
     idempotency_key,
+    need_invoice, // NEW — corporate customers flag this
+    gst_number,   // NEW — optional, for the invoice
   } = body as {
     customer_name: string;
     customer_phone: string;
@@ -37,6 +40,8 @@ export async function POST(request: NextRequest) {
     payment_method?: 'online' | 'cod';
     coupon_code?: string;
     idempotency_key: string;
+    need_invoice?: boolean;
+    gst_number?: string;
   };
 
   if (!customer_name?.trim() || !customer_phone?.trim()) {
@@ -55,9 +60,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'items must be a non-empty array' }, { status: 400 });
   }
 
-  // Double-submit guard: if this exact client-generated key already
-  // produced an order, return that order instead of creating a duplicate.
-  // Client generates one key per checkout attempt and reuses it on retry.
+  // Double-submit guard
   const { data: existingOrder } = await supabaseAdmin
     .from('orders')
     .select('*')
@@ -69,25 +72,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: existingOrder, orderToken }, { status: 200 });
   }
 
-  // Server-side pincode enforcement — the product-page gate is UX only.
-  if (delivery_pincode) {
-    const { serviceable } = await isPincodeServiceable(delivery_pincode);
-    if (!serviceable) {
-      return NextResponse.json(
-        { error: "Sorry, we don't deliver to this pincode yet" },
-        { status: 400 }
-      );
-    }
-  } else {
+  if (!delivery_pincode) {
     return NextResponse.json({ error: 'delivery_pincode is required' }, { status: 400 });
   }
+  const { serviceable } = await isPincodeServiceable(delivery_pincode);
+  if (!serviceable) {
+    return NextResponse.json({ error: "Sorry, we don't deliver to this pincode yet" }, { status: 400 });
+  }
+
+  const settings = await getDeliverySettings();
+
+  // #3 — Pre-booking: force delivery date to the earliest allowed date
+  // (today + min_lead_days). Client can't book same-day/earlier — we
+  // never trust a client-supplied date for this, we compute it here.
+  const earliestDate = getEarliestDeliveryDate(settings);
+  const finalDeliveryDate =
+    !delivery_date || delivery_date < earliestDate ? earliestDate : delivery_date;
 
   const method: 'online' | 'cod' = payment_method === 'cod' ? 'cod' : 'online';
 
   const productIds = items.map((i) => i.product_id);
   const { data: products, error: productsError } = await supabaseAdmin
     .from('products')
-    .select('id, price, is_available')
+    .select('id, price, is_available, stock_quantity')
     .in('id', productIds);
 
   if (productsError) {
@@ -115,6 +122,18 @@ export async function POST(request: NextRequest) {
     if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
       return NextResponse.json({ error: 'Invalid quantity' }, { status: 400 });
     }
+    // #7 — Quantity limits. stock_quantity === null means unlimited.
+    if (product.stock_quantity !== null && item.quantity > product.stock_quantity) {
+      return NextResponse.json(
+        {
+          error:
+            product.stock_quantity === 0
+              ? `Out of stock: ${item.product_id}`
+              : `Only ${product.stock_quantity} left in stock for this item`,
+        },
+        { status: 400 }
+      );
+    }
 
     const totalPrice = product.price * item.quantity;
     subtotal += totalPrice;
@@ -126,14 +145,12 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const deliveryCharge = subtotal >= 500 ? 0 : 40;
+  // #4 — Delivery fee now driven by admin settings, not hardcoded.
+  const deliveryCharge = computeDeliveryCharge(subtotal, settings);
   const discount = 0;
 
   const callerUser = getUserFromRequest(request);
 
-  // Coupon is re-validated here — never trust a discount amount computed
-  // client-side, even one that came from the earlier /validate preview
-  // call, since state can drift between preview and submission.
   let couponDiscount = 0;
   let appliedCouponId: string | null = null;
   if (coupon_code?.trim()) {
@@ -145,8 +162,21 @@ export async function POST(request: NextRequest) {
     appliedCouponId = result.coupon!.id;
   }
 
-  const total = subtotal + deliveryCharge - discount - couponDiscount;
+  // #5 — 5% tax, charged on (subtotal - coupon discount), before delivery fee.
+  const taxableAmount = Math.max(0, subtotal - couponDiscount);
+  const taxAmount = computeTax(taxableAmount, settings);
+
+  const total = subtotal + deliveryCharge + taxAmount - discount - couponDiscount;
   const initialStatus = method === 'cod' ? 'confirmed' : 'pending';
+
+  let invoiceNumber: string | null = null;
+  if (need_invoice) {
+    const { data: seqVal, error: seqError } = await supabaseAdmin.rpc('nextval', { seq: 'invoice_number_seq' });
+    if (seqError) {
+      return NextResponse.json({ error: `Failed to generate invoice number: ${seqError.message}` }, { status: 500 });
+    }
+    invoiceNumber = `INV-${new Date().getFullYear()}-${seqVal}`;
+  }
 
   const { data: order, error: orderError } = await supabaseAdmin
     .from('orders')
@@ -158,14 +188,16 @@ export async function POST(request: NextRequest) {
       payment_method: method,
       subtotal,
       delivery_charge: deliveryCharge,
+      tax_amount: taxAmount,
       discount,
       coupon_id: appliedCouponId,
       coupon_discount: couponDiscount,
       total,
       delivery_address: delivery_address.trim(),
-      delivery_date: delivery_date || null,
+      delivery_date: finalDeliveryDate,
       delivery_time: delivery_time || null,
       idempotency_key: idempotency_key.trim(),
+      invoice_number: invoiceNumber,
     })
     .select()
     .single();
@@ -183,6 +215,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: itemsError.message }, { status: 500 });
   }
 
+  // #7 — Decrement stock for items with a limited quantity.
+  for (const item of orderItemsToInsert) {
+    const product = productMap.get(item.product_id);
+    if (product && product.stock_quantity !== null) {
+      await supabaseAdmin
+        .from('products')
+        .update({ stock_quantity: Math.max(0, product.stock_quantity - item.quantity) })
+        .eq('id', item.product_id);
+    }
+  }
+
   if (appliedCouponId) {
     await recordCouponRedemption(appliedCouponId, callerUser?.sub ?? null, order.id, couponDiscount);
   }
@@ -190,7 +233,6 @@ export async function POST(request: NextRequest) {
   if (method === 'cod') {
     await awardLoyaltyPoints(order.id);
   }
-
   if (method === 'cod' && callerUser?.sub) {
     await completeReferralIfEligible(callerUser.sub);
   }

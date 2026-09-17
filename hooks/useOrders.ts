@@ -21,6 +21,8 @@ interface CreateOrderPayload {
   payment_method?: 'online' | 'cod';
   coupon_code?: string;
   idempotency_key: string;
+  need_invoice?: boolean;
+  gst_number?: string;
 }
 
 interface CreateOrderResponse {

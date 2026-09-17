@@ -26,8 +26,6 @@ export default function ProductDetailPage() {
   const [pincodeError, setPincodeError] = useState<string | null>(null);
   const checkPincode = useCheckPincode();
 
-  // Remember the last confirmed pincode for this browser so returning
-  // visitors don't have to re-enter it on every product page.
   useState(() => {
     if (typeof window === 'undefined') return;
     const stored = localStorage.getItem(PINCODE_STORAGE_KEY);
@@ -41,6 +39,12 @@ export default function ProductDetailPage() {
   if (error || !product) {
     return <div className="px-4 py-24 text-center text-black/60">Couldn&apos;t find that product.</div>;
   }
+
+  // #7 — stock/quantity limits. stock_quantity === null means unlimited.
+  const stockLimit = product.stock_quantity;
+  const outOfStock = stockLimit !== null && stockLimit <= 0;
+  const lowStock = stockLimit !== null && stockLimit > 0 && stockLimit <= 5;
+  const atStockLimit = stockLimit !== null && quantity >= stockLimit;
 
   const handleCheckPincode = async () => {
     setPincodeError(null);
@@ -64,7 +68,7 @@ export default function ProductDetailPage() {
     }
   };
 
-  const canOrder = product.is_available && serviceable === true;
+  const canOrder = product.is_available && serviceable === true && !outOfStock;
 
   const addToCart = async () => {
     await simulateDelay();
@@ -85,9 +89,11 @@ export default function ProductDetailPage() {
         {product.image_url && (
           <Image src={product.image_url} alt={product.name} fill className="object-cover" unoptimized />
         )}
-        {!product.is_available && (
+        {(!product.is_available || outOfStock) && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-            <span className="text-white font-semibold">Currently Unavailable</span>
+            <span className="text-white font-semibold">
+              {!product.is_available ? 'Currently Unavailable' : 'Out of Stock'}
+            </span>
           </div>
         )}
       </div>
@@ -105,6 +111,14 @@ export default function ProductDetailPage() {
       )}
 
       <div className="text-2xl font-bold text-black mt-6">₹{product.price}</div>
+
+      {/* #7 — limited stock notice */}
+      {lowStock && !outOfStock && (
+        <p className="text-xs font-medium text-orange-600 mt-2">Only {stockLimit} left — limited stock</p>
+      )}
+      {outOfStock && (
+        <p className="text-xs font-medium text-red-600 mt-2">Out of stock right now</p>
+      )}
 
       {/* Delivery pincode check */}
       <div className="mt-6 border border-zinc-200 rounded-xl p-4">
@@ -149,13 +163,17 @@ export default function ProductDetailPage() {
           </button>
           <span className="w-8 text-center font-medium">{quantity}</span>
           <button
-            onClick={() => setQuantity((q) => q + 1)}
-            className="w-10 h-10 flex items-center justify-center"
+            onClick={() => setQuantity((q) => (stockLimit !== null ? Math.min(stockLimit, q + 1) : q + 1))}
+            disabled={outOfStock || atStockLimit}
+            className="w-10 h-10 flex items-center justify-center disabled:opacity-30"
             aria-label="Increase quantity"
           >
             <AnimatedPlus />
           </button>
         </div>
+        {atStockLimit && !outOfStock && (
+          <span className="text-xs text-black/50">Max available quantity reached</span>
+        )}
       </div>
 
       <div className="flex flex-row gap-3 mt-8">
@@ -182,7 +200,7 @@ export default function ProductDetailPage() {
           className="flex-1 h-12"
         />
       </div>
-      {!canOrder && product.is_available && serviceable === null && (
+      {!canOrder && product.is_available && !outOfStock && serviceable === null && (
         <p className="text-xs text-black/50 mt-2 text-center">
           Check your delivery pincode above to enable ordering
         </p>

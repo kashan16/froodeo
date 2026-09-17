@@ -25,6 +25,7 @@ export interface Product {
   is_available: boolean;
   is_featured: boolean;
   created_at: string;
+  stock_quantity: number | null;
   loyalty_points: number;
 }
 
@@ -45,6 +46,7 @@ export interface Order {
   status: OrderStatus;
   subtotal: number;
   delivery_charge: number;
+  tax_amount: number;
   discount: number;
   total: number;
   delivery_address: string;
@@ -60,6 +62,7 @@ export interface Order {
   points_discount: number;
   coupon_id: string | null;
   coupon_discount: number;
+  invoice_number: string | null;
 }
 
 export interface OrderItem {

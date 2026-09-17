@@ -2,17 +2,16 @@
 
 import { ActionButton } from '@/components/ui/action-button';
 import { AnimatedMinus, AnimatedPlus } from '@/components/ui/animted-icons';
+import { useCouponContext } from '@/context/CouponContext';
 import { useValidateCoupon } from '@/hooks/useCoupon';
+import { usePublicDeliverySettings } from '@/hooks/useDeliverySettings';
 import { useCreateOrder } from '@/hooks/useOrders';
 import { useRazorpayPayment } from '@/hooks/useRazorpayPayment';
 import { useCart } from '@/lib/cart-context';
 import { simulateDelay } from '@/lib/simulate-display';
-import { ChevronDown, Clock, MapPin, Tag, Wallet } from 'lucide-react';
+import { ChevronDown, Clock, FileText, MapPin, Tag, Wallet } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
-
-const DELIVERY_CHARGE_THRESHOLD = 500;
-const DELIVERY_CHARGE = 40;
+import { useMemo, useRef, useState } from 'react';
 
 type PaymentMethod = 'online' | 'cod';
 
@@ -36,36 +35,61 @@ function SectionCard({
   );
 }
 
+// #3 — earliest bookable date, client-side mirror of the server rule.
+// Server is authoritative and re-derives/clamps this itself; this is
+// just so the date picker's min attribute and default value match.
+function getEarliestDateClient(minLeadDays: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + minLeadDays);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
+  // #8 — cart itself (items, subtotal, import { useCouponContext } from '@/lib/coupon-context';etc.) stays in CartContext.
   const { items, subtotal, updateQuantity, removeItem, clearCart } = useCart();
+  // #2 — coupon now lives in its own CouponContext (wrapped in layout.tsx),
+  // so it survives navigation independently of the cart's own state.
+  const { appliedCoupon, setAppliedCoupon, clearCoupon } = useCouponContext();
   const createOrder = useCreateOrder();
   const validateCoupon = useValidateCoupon();
   const { initializePayment, isLoading: paymentLoading, error: paymentError } = useRazorpayPayment();
+  const { data: deliverySettings } = usePublicDeliverySettings();
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [pincode, setPincode] = useState('');
-  const [deliveryDate, setDeliveryDate] = useState('');
+  const minLeadDays = deliverySettings?.min_lead_days ?? 1;
+  const earliestDate = useMemo(() => getEarliestDateClient(minLeadDays), [minLeadDays]);
+  const [deliveryDate, setDeliveryDate] = useState(earliestDate);
   const [deliveryTime, setDeliveryTime] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod');
-  const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discountAmount: number } | null>(null);
+  const [couponCode, setCouponCode] = useState(appliedCoupon?.code ?? '');
   const [couponError, setCouponError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
-  // Generated once per mount and reused across retries within this
-  // checkout session, so a double-tap or a retry-after-network-error
-  // reuses the same idempotency_key instead of creating a duplicate order.
+  // #6 — invoice request for corporate customers.
+  const [needInvoice, setNeedInvoice] = useState(false);
+  const [gstNumber, setGstNumber] = useState('');
+
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
 
-  const deliveryCharge = subtotal >= DELIVERY_CHARGE_THRESHOLD ? 0 : DELIVERY_CHARGE;
+  const deliveryCharge = deliverySettings
+    ? deliverySettings.is_delivery_free
+      ? 0
+      : subtotal >= deliverySettings.free_delivery_threshold
+      ? 0
+      : deliverySettings.delivery_charge
+    : 0;
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
-  const total = Math.max(0, subtotal + deliveryCharge - couponDiscount);
+  const taxPercent = deliverySettings?.tax_percent ?? 5;
+  const taxableAmount = Math.max(0, subtotal - couponDiscount);
+  const taxAmount = Math.round(taxableAmount * (taxPercent / 100) * 100) / 100;
+  const total = Math.max(0, subtotal + deliveryCharge + taxAmount - couponDiscount);
   const totalItemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
   if (items.length === 0 && !orderId) {
@@ -92,6 +116,7 @@ export default function CheckoutPage() {
     if (!/^[6-9]\d{9}$/.test(phone.trim())) return 'Please enter a valid 10-digit phone number';
     if (!address.trim()) return 'Please enter a delivery address';
     if (!/^\d{6}$/.test(pincode.trim())) return 'Please enter a valid 6-digit pincode';
+    if (needInvoice && !gstNumber.trim()) return 'GST number is required for invoice generation';
     return null;
   };
 
@@ -108,7 +133,7 @@ export default function CheckoutPage() {
   };
 
   const handleRemoveCoupon = () => {
-    setAppliedCoupon(null);
+    clearCoupon();
     setCouponCode('');
     setCouponError(null);
   };
@@ -129,11 +154,13 @@ export default function CheckoutPage() {
         items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
         delivery_address: address.trim(),
         delivery_pincode: pincode.trim(),
-        delivery_date: deliveryDate || undefined,
+        delivery_date: deliveryDate || earliestDate,
         delivery_time: deliveryTime || undefined,
         payment_method: paymentMethod,
         coupon_code: appliedCoupon?.code,
         idempotency_key: idempotencyKeyRef.current,
+        need_invoice: needInvoice,
+        gst_number: needInvoice ? gstNumber.trim() : undefined,
       });
 
       setOrderId(order.id);
@@ -146,7 +173,10 @@ export default function CheckoutPage() {
         });
       }
 
+      // #8 — only clear the cart and coupon once the order (and payment,
+      // for online) has actually gone through successfully.
       clearCart();
+      clearCoupon();
       router.push(`/order-confirmation/${order.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to place order';
@@ -193,12 +223,18 @@ export default function CheckoutPage() {
           </div>
         </SectionCard>
 
-        <SectionCard icon={<Clock size={16} />} title="Delivery Time">
+        {/* #3 — Pre-booking only: date picker is locked to next-day (or
+            whatever min_lead_days the admin sets) and can't go earlier. */}
+        <SectionCard icon={<Clock size={16} />} title="Delivery Time (Pre-Booking)">
+          <p className="text-xs text-orange-600 bg-orange-50 rounded-lg px-3 py-2 mb-3">
+            We&apos;re currently pre-booking — orders are delivered starting the next day.
+          </p>
           <div className="flex gap-3">
             <input
               type="date"
               value={deliveryDate}
-              onChange={(e) => setDeliveryDate(e.target.value)}
+              min={earliestDate}
+              onChange={(e) => setDeliveryDate(e.target.value < earliestDate ? earliestDate : e.target.value)}
               className="flex-1 h-11 px-3 rounded-lg border border-zinc-200 text-sm outline-none focus:border-orange-400"
             />
             <input
@@ -208,7 +244,7 @@ export default function CheckoutPage() {
               className="flex-1 h-11 px-3 rounded-lg border border-zinc-200 text-sm outline-none focus:border-orange-400"
             />
           </div>
-          <p className="text-xs text-black/50 mt-2">Leave blank to deliver as soon as possible</p>
+          <p className="text-xs text-black/50 mt-2">Leave time blank for any time on the delivery date</p>
         </SectionCard>
 
         <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
@@ -284,6 +320,7 @@ export default function CheckoutPage() {
           )}
         </div>
 
+        {/* #2 — coupon UI now reflects the persisted CouponContext state. */}
         <SectionCard icon={<Tag size={16} />} title="Coupon">
           {appliedCoupon ? (
             <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-3 py-2">
@@ -340,6 +377,22 @@ export default function CheckoutPage() {
           </div>
         </SectionCard>
 
+        {/* #6 — Invoice request for corporate reimbursement */}
+        <SectionCard icon={<FileText size={16} />} title="Invoice">
+          <label className="flex items-center gap-2 text-sm text-black/80 mb-3">
+            <input type="checkbox" checked={needInvoice} onChange={(e) => setNeedInvoice(e.target.checked)} />
+            I need a GST invoice for this order (corporate reimbursement)
+          </label>
+          {needInvoice && (
+            <input
+              placeholder="GSTIN / Company GST number"
+              value={gstNumber}
+              onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
+              className="w-full h-11 px-3 rounded-lg border border-zinc-200 text-sm outline-none focus:border-orange-400"
+            />
+          )}
+        </SectionCard>
+
         <SectionCard icon={<span className="text-sm">₹</span>} title="Bill Details">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between text-black/70">
@@ -356,9 +409,14 @@ export default function CheckoutPage() {
                 <span>−₹{couponDiscount}</span>
               </div>
             )}
+            {/* #5 — Tax line, shown transparently at checkout */}
+            <div className="flex justify-between text-black/70">
+              <span>Tax ({taxPercent}%)</span>
+              <span>₹{taxAmount.toFixed(2)}</span>
+            </div>
             <div className="flex justify-between font-bold text-black pt-2 border-t border-zinc-200">
               <span>Total</span>
-              <span>₹{total}</span>
+              <span>₹{total.toFixed(2)}</span>
             </div>
           </div>
         </SectionCard>
@@ -382,7 +440,7 @@ export default function CheckoutPage() {
           <ActionButton
             onAction={handlePlaceOrder}
             disabled={items.length === 0 || isBusy}
-            idleLabel={paymentMethod === 'cod' ? `Place Order — ₹${total} (COD)` : `Pay ₹${total}`}
+            idleLabel={paymentMethod === 'cod' ? `Place Order — ₹${total.toFixed(2)} (COD)` : `Pay ₹${total.toFixed(2)}`}
             loadingLabel={paymentMethod === 'cod' ? 'Placing order...' : 'Processing payment...'}
             successTitle={paymentMethod === 'cod' ? 'Order placed!' : 'Payment successful!'}
             successDescription="We'll notify you once it's on the way."
