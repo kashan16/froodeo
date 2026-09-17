@@ -4,18 +4,16 @@ import { ActionButton } from "@/components/ui/action-button";
 import { simulateDelay } from "@/lib/simulate-display";
 import Autoplay from "embla-carousel-autoplay";
 import useEmblaCarousel from "embla-carousel-react";
-import { ArrowRight, ChevronDown, Flame, MapPin, ShieldCheck } from "lucide-react";
+import { ArrowRight, ChevronDown, MapPin } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 const HERO_IMAGES = [
-    { src: "/hero.png", alt: "Lucknowi Biryani hero background" },
-    { src: "/image2.jpeg", alt: "Freshly cooked Lucknowi Biryani" },
-    { src: "/image3.jpeg", alt: "Biryani being served" },
-    { src: "/image4.jpeg", alt: "Signature Lucknowi dish" },
-    { src: "/image5.jpeg", alt: "Hygienic kitchen preparation" },
-    { src: "/image6.jpeg", alt: "Fast biryani delivery" },
+    { src: "/hero.png",  mobile: '/heromob.png', alt: "Lucknowi Biryani hero background" },
+    { src: "/image1.jpeg",  mobile: '/image1mob.png', alt: "Freshly cooked Lucknowi Biryani" },
+    { src: "/image2.jpeg",  mobile: '/image2mob.png', alt: "Biryani being served" },
+    { src: "/image3.jpeg",  mobile: '/image3mob.png', alt: "Signature Lucknowi dish" },
 ];
 
 const AUTOPLAY_DELAY = 4000;
@@ -59,13 +57,30 @@ export const Hero = () => {
                                 key={image.src}
                                 className="relative min-w-0 flex-[0_0_100%] h-full overflow-hidden"
                             >
+                                {/* Mobile image — shown below md breakpoint */}
+                                <Image
+                                    src={image.mobile}
+                                    alt={image.alt}
+                                    fill
+                                    priority={index === 0}
+                                    sizes="100vw"
+                                    className={`block md:hidden object-cover object-center ease-linear transition-transform ${
+                                        selectedIndex === index
+                                            ? "scale-110"
+                                            : "scale-100"
+                                    }`}
+                                    style={{
+                                        transitionDuration: `${AUTOPLAY_DELAY + 500}ms`,
+                                    }}
+                                />
+                                {/* Desktop image — shown at md and above */}
                                 <Image
                                     src={image.src}
                                     alt={image.alt}
                                     fill
                                     priority={index === 0}
                                     sizes="100vw"
-                                    className={`object-cover object-center ease-linear transition-transform ${
+                                    className={`hidden md:block object-cover object-center ease-linear transition-transform ${
                                         selectedIndex === index
                                             ? "scale-110"
                                             : "scale-100"
@@ -104,25 +119,8 @@ export const Hero = () => {
                         <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-orange-500 mb-3">
                             Delivered Hot!
                         </h1>
-                        <p className="text-white/90 text-sm md:text-base mb-5">
-                            Authentic taste of Lucknow,<br />now at your doorstep.
-                        </p>
-
-                        {/* Feature badges */}
-                        <div className="flex flex-wrap gap-3 mb-6">
-                            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm text-white text-xs md:text-sm px-3 py-2 rounded-full">
-                                <ShieldCheck size={14} className="text-orange-500" />
-                                Freshly Cooked
-                            </div>
-                            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm text-white text-xs md:text-sm px-3 py-2 rounded-full">
-                                <ShieldCheck size={14} className="text-orange-500" />
-                                Hygienic Kitchen
-                            </div>
-                            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm text-white text-xs md:text-sm px-3 py-2 rounded-full">
-                                <Flame size={14} className="text-orange-500" />
-                                Fast Delivery
-                            </div>
-                        </div>
+                        <br/>
+                        <br/>
 
                         {/* CTA */}
                         <ActionButton
