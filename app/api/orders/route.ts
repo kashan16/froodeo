@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
     payment_method,
     coupon_code,
     idempotency_key,
-    need_invoice, // NEW — corporate customers flag this
-    gst_number,   // NEW — optional, for the invoice
+    need_invoice,
+    gst_number,
   } = body as {
     customer_name: string;
     customer_phone: string;
@@ -83,13 +83,13 @@ export async function POST(request: NextRequest) {
   const settings = await getDeliverySettings();
 
   // #3 — Pre-booking: force delivery date to the earliest allowed date
-  // (today + min_lead_days). Client can't book same-day/earlier — we
-  // never trust a client-supplied date for this, we compute it here.
+  // (today + min_lead_days). Never trust a client-supplied date for this.
   const earliestDate = getEarliestDeliveryDate(settings);
   const finalDeliveryDate =
     !delivery_date || delivery_date < earliestDate ? earliestDate : delivery_date;
 
   const method: 'online' | 'cod' = payment_method === 'cod' ? 'cod' : 'online';
+  const normalizedPhone = customer_phone.trim();
 
   const productIds = items.map((i) => i.product_id);
   const { data: products, error: productsError } = await supabaseAdmin
@@ -151,10 +151,13 @@ export async function POST(request: NextRequest) {
 
   const callerUser = getUserFromRequest(request);
 
+  // Coupon redemption limits are enforced per phone number (guest
+  // checkouts rarely have a user_id) — pass it through so validateCoupon
+  // can check "has this number already used this coupon".
   let couponDiscount = 0;
   let appliedCouponId: string | null = null;
   if (coupon_code?.trim()) {
-    const result = await validateCoupon(coupon_code, subtotal, callerUser?.sub ?? null);
+    const result = await validateCoupon(coupon_code, subtotal, callerUser?.sub ?? null, normalizedPhone);
     if (!result.valid) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
@@ -162,7 +165,7 @@ export async function POST(request: NextRequest) {
     appliedCouponId = result.coupon!.id;
   }
 
-  // #5 — 5% tax, charged on (subtotal - coupon discount), before delivery fee.
+  // #5 — tax charged on (subtotal - coupon discount), before delivery fee.
   const taxableAmount = Math.max(0, subtotal - couponDiscount);
   const taxAmount = computeTax(taxableAmount, settings);
 
@@ -183,7 +186,7 @@ export async function POST(request: NextRequest) {
     .insert({
       user_id: callerUser?.sub ?? null,
       customer_name: customer_name.trim(),
-      customer_phone: customer_phone.trim(),
+      customer_phone: normalizedPhone,
       status: initialStatus,
       payment_method: method,
       subtotal,
@@ -227,7 +230,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (appliedCouponId) {
-    await recordCouponRedemption(appliedCouponId, callerUser?.sub ?? null, order.id, couponDiscount);
+    await recordCouponRedemption(appliedCouponId, callerUser?.sub ?? null, normalizedPhone, order.id, couponDiscount);
   }
 
   if (method === 'cod') {

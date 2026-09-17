@@ -1,5 +1,6 @@
 'use client';
 
+import { CouponModal } from '@/components/CouponModal';
 import { ActionButton } from '@/components/ui/action-button';
 import { AnimatedMinus, AnimatedPlus } from '@/components/ui/animted-icons';
 import { useCouponContext } from '@/context/CouponContext';
@@ -36,8 +37,6 @@ function SectionCard({
 }
 
 // #3 — earliest bookable date, client-side mirror of the server rule.
-// Server is authoritative and re-derives/clamps this itself; this is
-// just so the date picker's min attribute and default value match.
 function getEarliestDateClient(minLeadDays: number) {
   const d = new Date();
   d.setDate(d.getDate() + minLeadDays);
@@ -46,10 +45,7 @@ function getEarliestDateClient(minLeadDays: number) {
 
 export default function CheckoutPage() {
   const router = useRouter();
-  // #8 — cart itself (items, subtotal, import { useCouponContext } from '@/lib/coupon-context';etc.) stays in CartContext.
   const { items, subtotal, updateQuantity, removeItem, clearCart } = useCart();
-  // #2 — coupon now lives in its own CouponContext (wrapped in layout.tsx),
-  // so it survives navigation independently of the cart's own state.
   const { appliedCoupon, setAppliedCoupon, clearCoupon } = useCouponContext();
   const createOrder = useCreateOrder();
   const validateCoupon = useValidateCoupon();
@@ -65,14 +61,13 @@ export default function CheckoutPage() {
   const [deliveryDate, setDeliveryDate] = useState(earliestDate);
   const [deliveryTime, setDeliveryTime] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod');
-  const [couponCode, setCouponCode] = useState(appliedCoupon?.code ?? '');
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponModalOpen, setCouponModalOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
-  // #6 — invoice request for corporate customers.
   const [needInvoice, setNeedInvoice] = useState(false);
   const [gstNumber, setGstNumber] = useState('');
 
@@ -120,21 +115,29 @@ export default function CheckoutPage() {
     return null;
   };
 
-  const handleApplyCoupon = async () => {
+  // Coupon redemption limits are enforced per phone number, so the
+  // phone field must be filled in (and valid) before the modal will
+  // let a code through — otherwise the server can't check "has this
+  // number used this coupon before".
+  const isPhoneValid = /^[6-9]\d{9}$/.test(phone.trim());
+
+  const applyCode = async (code: string) => {
     setCouponError(null);
-    if (!couponCode.trim()) return;
+    if (!isPhoneValid) {
+      setCouponError('Enter your phone number above before applying a coupon');
+      return;
+    }
     try {
-      const result = await validateCoupon.mutateAsync({ code: couponCode.trim(), subtotal });
+      const result = await validateCoupon.mutateAsync({ code, subtotal, phone: phone.trim() });
       setAppliedCoupon({ code: result.coupon.code, discountAmount: result.discountAmount });
+      setCouponModalOpen(false);
     } catch (err) {
-      setAppliedCoupon(null);
       setCouponError(err instanceof Error ? err.message : 'Invalid coupon');
     }
   };
 
   const handleRemoveCoupon = () => {
     clearCoupon();
-    setCouponCode('');
     setCouponError(null);
   };
 
@@ -173,8 +176,6 @@ export default function CheckoutPage() {
         });
       }
 
-      // #8 — only clear the cart and coupon once the order (and payment,
-      // for online) has actually gone through successfully.
       clearCart();
       clearCoupon();
       router.push(`/order-confirmation/${order.id}`);
@@ -223,8 +224,6 @@ export default function CheckoutPage() {
           </div>
         </SectionCard>
 
-        {/* #3 — Pre-booking only: date picker is locked to next-day (or
-            whatever min_lead_days the admin sets) and can't go earlier. */}
         <SectionCard icon={<Clock size={16} />} title="Delivery Time (Pre-Booking)">
           <p className="text-xs text-orange-600 bg-orange-50 rounded-lg px-3 py-2 mb-3">
             We&apos;re currently pre-booking — orders are delivered starting the next day.
@@ -320,7 +319,8 @@ export default function CheckoutPage() {
           )}
         </div>
 
-        {/* #2 — coupon UI now reflects the persisted CouponContext state. */}
+        {/* Coupon — CTA opens the browse/apply modal instead of an inline
+            entry field. */}
         <SectionCard icon={<Tag size={16} />} title="Coupon">
           {appliedCoupon ? (
             <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-3 py-2">
@@ -332,21 +332,17 @@ export default function CheckoutPage() {
               </button>
             </div>
           ) : (
-            <div className="flex gap-2">
-              <input
-                value={couponCode}
-                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                placeholder="Enter coupon code"
-                className="flex-1 h-11 px-3 rounded-lg border border-zinc-200 text-sm outline-none focus:border-orange-400"
-              />
-              <button
-                onClick={handleApplyCoupon}
-                disabled={validateCoupon.isPending || !couponCode.trim()}
-                className="px-4 h-11 rounded-lg bg-black text-white text-sm font-medium disabled:opacity-50"
-              >
-                {validateCoupon.isPending ? 'Checking...' : 'Apply'}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setCouponModalOpen(true)}
+              className="w-full flex items-center justify-between px-4 h-11 rounded-lg border border-dashed border-orange-300 bg-orange-50 text-sm font-medium text-orange-600"
+            >
+              <span>View available coupons</span>
+              <Tag size={16} />
+            </button>
+          )}
+          {!isPhoneValid && !appliedCoupon && (
+            <p className="text-xs text-black/40 mt-2">Enter your phone number above to apply a coupon</p>
           )}
           {couponError && <p className="text-xs text-red-600 mt-2">{couponError}</p>}
         </SectionCard>
@@ -377,7 +373,6 @@ export default function CheckoutPage() {
           </div>
         </SectionCard>
 
-        {/* #6 — Invoice request for corporate reimbursement */}
         <SectionCard icon={<FileText size={16} />} title="Invoice">
           <label className="flex items-center gap-2 text-sm text-black/80 mb-3">
             <input type="checkbox" checked={needInvoice} onChange={(e) => setNeedInvoice(e.target.checked)} />
@@ -409,7 +404,6 @@ export default function CheckoutPage() {
                 <span>−₹{couponDiscount}</span>
               </div>
             )}
-            {/* #5 — Tax line, shown transparently at checkout */}
             <div className="flex justify-between text-black/70">
               <span>Tax ({taxPercent}%)</span>
               <span>₹{taxAmount.toFixed(2)}</span>
@@ -448,6 +442,14 @@ export default function CheckoutPage() {
           />
         </div>
       </div>
+
+      <CouponModal
+        open={couponModalOpen}
+        onOpenChange={setCouponModalOpen}
+        subtotal={subtotal}
+        onSelectCode={applyCode}
+        applying={validateCoupon.isPending}
+      />
     </div>
   );
 }

@@ -1,31 +1,62 @@
-import { supabaseAdmin } from './supabaseAdmin';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
-export interface CouponValidationResult {
+interface CouponRow {
+  id: string;
+  code: string;
+  discount_type: 'flat' | 'percentage';
+  discount_value: number;
+  max_discount_amount: number | null;
+  min_order_value: number;
+  usage_limit: number | null;
+  usage_limit_per_user: number;
+  used_count: number;
+  valid_from: string;
+  valid_until: string | null;
+  is_active: boolean;
+}
+
+interface ValidateCouponResult {
   valid: boolean;
   error?: string;
-  coupon?: {
-    id: string;
-    code: string;
-    discount_type: 'flat' | 'percentage';
-    discount_value: number;
-    max_discount_amount: number | null;
-  };
+  coupon?: CouponRow;
   discountAmount?: number;
 }
 
+function computeDiscount(coupon: CouponRow, subtotal: number): number {
+  let discount =
+    coupon.discount_type === 'flat'
+      ? coupon.discount_value
+      : Math.round(subtotal * (coupon.discount_value / 100) * 100) / 100;
+
+  if (coupon.discount_type === 'percentage' && coupon.max_discount_amount != null) {
+    discount = Math.min(discount, coupon.max_discount_amount);
+  }
+  return Math.min(discount, subtotal);
+}
+
+// phone is now required for per-customer limit enforcement — guest
+// checkouts never reliably have a user_id, but every order collects a
+// phone number, so that's the identity the redemption cap is keyed to.
 export async function validateCoupon(
   code: string,
   subtotal: number,
-  userId: string | null
-): Promise<CouponValidationResult> {
-  const { data: coupon } = await supabaseAdmin
+  userId: string | null,
+  phone: string | null
+): Promise<ValidateCouponResult> {
+  const normalizedCode = code.trim().toUpperCase();
+
+  const { data: coupon, error } = await supabaseAdmin
     .from('coupons')
     .select('*')
-    .ilike('code', code.trim())
-    .eq('is_active', true)
-    .maybeSingle();
+    .eq('code', normalizedCode)
+    .single();
 
-  if (!coupon) return { valid: false, error: 'Invalid coupon code' };
+  if (error || !coupon) {
+    return { valid: false, error: 'Invalid coupon code' };
+  }
+  if (!coupon.is_active) {
+    return { valid: false, error: 'This coupon is no longer active' };
+  }
 
   const now = new Date();
   if (coupon.valid_from && new Date(coupon.valid_from) > now) {
@@ -34,90 +65,64 @@ export async function validateCoupon(
   if (coupon.valid_until && new Date(coupon.valid_until) < now) {
     return { valid: false, error: 'This coupon has expired' };
   }
+
   if (subtotal < coupon.min_order_value) {
     return {
       valid: false,
-      error: `Minimum order value ₹${coupon.min_order_value} required for this coupon`,
+      error: `Minimum order value for this coupon is ₹${coupon.min_order_value}`,
     };
   }
-  if (coupon.usage_limit !== null && coupon.used_count >= coupon.usage_limit) {
+
+  if (coupon.usage_limit != null && coupon.used_count >= coupon.usage_limit) {
     return { valid: false, error: 'This coupon has reached its usage limit' };
   }
 
-  // Per-user limit only enforceable for logged-in users — guests have no
-  // stable identity to check redemption history against, so this check
-  // is skipped for guest checkout (accepted trade-off of the guest model).
-  if (userId) {
-    const { count } = await supabaseAdmin
+  // Per-customer limit — checked by phone (always present) and, if
+  // available, by user_id too, so a logged-in user can't dodge the cap
+  // by ordering from a different phone number attached to their account.
+  if (phone || userId) {
+    let query = supabaseAdmin
       .from('coupon_redemptions')
       .select('id', { count: 'exact', head: true })
-      .eq('coupon_id', coupon.id)
-      .eq('user_id', userId);
+      .eq('coupon_id', coupon.id);
 
+    if (phone && userId) {
+      query = query.or(`customer_phone.eq.${phone},user_id.eq.${userId}`);
+    } else if (phone) {
+      query = query.eq('customer_phone', phone);
+    } else if (userId) {
+      query = query.eq('user_id', userId);
+    }
+
+    const { count, error: countError } = await query;
+    if (countError) {
+      return { valid: false, error: 'Failed to validate coupon usage' };
+    }
     if ((count ?? 0) >= coupon.usage_limit_per_user) {
-      return { valid: false, error: "You've already used this coupon" };
+      return { valid: false, error: 'You have already used this coupon' };
     }
   }
 
-  let discountAmount =
-    coupon.discount_type === 'flat'
-      ? coupon.discount_value
-      : (subtotal * coupon.discount_value) / 100;
-
-  if (coupon.max_discount_amount !== null) {
-    discountAmount = Math.min(discountAmount, coupon.max_discount_amount);
-  }
-  discountAmount = Math.min(discountAmount, subtotal); // never discount below zero
-
-  return {
-    valid: true,
-    coupon: {
-      id: coupon.id,
-      code: coupon.code,
-      discount_type: coupon.discount_type,
-      discount_value: coupon.discount_value,
-      max_discount_amount: coupon.max_discount_amount,
-    },
-    discountAmount: Math.round(discountAmount * 100) / 100,
-  };
+  const discountAmount = computeDiscount(coupon, subtotal);
+  return { valid: true, coupon, discountAmount };
 }
 
-// Records the redemption and increments used_count. Only called once an
 export async function recordCouponRedemption(
   couponId: string,
   userId: string | null,
+  phone: string | null,
   orderId: string,
   discountAmount: number
-): Promise<void> {
-  if (userId) {
-    await supabaseAdmin.from('coupon_redemptions').insert({
-      coupon_id: couponId,
-      user_id: userId,
-      order_id: orderId,
-      discount_amount: discountAmount,
-    });
-  }
-
-  // used_count is tracked regardless of login state — guests still count
-  // against the coupon's total usage_limit, just not usage_limit_per_user.
-  const { error: rpcError } = await supabaseAdmin.rpc('increment_coupon_used_count', {
-    coupon_id_input: couponId,
+) {
+  await supabaseAdmin.from('coupon_redemptions').insert({
+    coupon_id: couponId,
+    user_id: userId,
+    customer_phone: phone,
+    order_id: orderId,
+    discount_amount: discountAmount,
   });
 
-  if (rpcError) {
-    // Fallback if the RPC doesn't exist yet (e.g. migration not run).
-    // Not atomic — acceptable stopgap, but run the migration below and
-    // this branch stops being hit.
-    const { data: current } = await supabaseAdmin
-      .from('coupons')
-      .select('used_count')
-      .eq('id', couponId)
-      .single();
-    if (current) {
-      await supabaseAdmin
-        .from('coupons')
-        .update({ used_count: current.used_count + 1 })
-        .eq('id', couponId);
-    }
-  }
+  // used_count needs an atomic increment, not a read-then-write, or two
+  // concurrent redemptions can both read the same stale value.
+  await supabaseAdmin.rpc('increment_coupon_used_count', { coupon_id_input: couponId });
 }
