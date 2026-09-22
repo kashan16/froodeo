@@ -40,7 +40,6 @@ export default function ProductDetailPage() {
     return <div className="px-4 py-24 text-center text-black/60">Couldn&apos;t find that product.</div>;
   }
 
-  // #7 — stock/quantity limits. stock_quantity === null means unlimited.
   const stockLimit = product.stock_quantity;
   const outOfStock = stockLimit !== null && stockLimit <= 0;
   const lowStock = stockLimit !== null && stockLimit > 0 && stockLimit <= 5;
@@ -87,7 +86,14 @@ export default function ProductDetailPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 md:py-12">
       <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-zinc-100 mb-6">
         {product.image_url && (
-          <Image src={product.image_url} alt={product.name} fill className="object-cover" unoptimized />
+          <Image
+            src={product.image_url}
+            alt={product.name}
+            fill
+            className="object-cover"
+            sizes="(max-width: 768px) 100vw, 768px"
+            priority
+          />
         )}
         {(!product.is_available || outOfStock) && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -112,7 +118,6 @@ export default function ProductDetailPage() {
 
       <div className="text-2xl font-bold text-black mt-6">₹{product.price}</div>
 
-      {/* #7 — limited stock notice */}
       {lowStock && !outOfStock && (
         <p className="text-xs font-medium text-orange-600 mt-2">Only {stockLimit} left — limited stock</p>
       )}
@@ -120,7 +125,6 @@ export default function ProductDetailPage() {
         <p className="text-xs font-medium text-red-600 mt-2">Out of stock right now</p>
       )}
 
-      {/* Delivery pincode check */}
       <div className="mt-6 border border-zinc-200 rounded-xl p-4">
         <div className="flex items-center gap-2 mb-2 text-sm font-medium text-black">
           <MapPin size={16} className="text-orange-500" />

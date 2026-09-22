@@ -17,9 +17,26 @@ const HERO_IMAGES = [
 ];
 
 const AUTOPLAY_DELAY = 4000;
+const MOBILE_BREAKPOINT = 768; // matches Tailwind's `md`
+
+function useIsMobile() {
+    const [isMobile, setIsMobile] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setIsMobile(mql.matches);
+        const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+        mql.addEventListener("change", onChange);
+        return () => mql.removeEventListener("change", onChange);
+    }, []);
+
+    return isMobile;
+}
 
 export const Hero = () => {
     const router = useRouter();
+    const isMobile = useIsMobile();
 
     const [emblaRef, emblaApi] = useEmblaCarousel(
         { loop: true, duration: 30 },
@@ -52,45 +69,57 @@ export const Hero = () => {
             <div className="relative min-w-full h-[500px] md:h-[600px] lg:h-[700px] overflow-hidden">
                 <div className="h-full w-full overflow-hidden" ref={emblaRef}>
                     <div className="flex h-full touch-pan-y">
-                        {HERO_IMAGES.map((image, index) => (
-                            <div
-                                key={image.src}
-                                className="relative min-w-0 flex-[0_0_100%] h-full overflow-hidden"
-                            >
-                                {/* Mobile image — shown below md breakpoint */}
-                                <Image
-                                    src={image.mobile}
-                                    alt={image.alt}
-                                    fill
-                                    priority={index === 0}
-                                    sizes="100vw"
-                                    className={`block md:hidden object-cover object-center ease-linear transition-transform ${
-                                        selectedIndex === index
-                                            ? "scale-110"
-                                            : "scale-100"
-                                    }`}
-                                    style={{
-                                        transitionDuration: `${AUTOPLAY_DELAY + 500}ms`,
-                                    }}
-                                />
-                                {/* Desktop image — shown at md and above */}
-                                <Image
-                                    src={image.src}
-                                    alt={image.alt}
-                                    fill
-                                    priority={index === 0}
-                                    sizes="100vw"
-                                    className={`hidden md:block object-cover object-center ease-linear transition-transform ${
-                                        selectedIndex === index
-                                            ? "scale-110"
-                                            : "scale-100"
-                                    }`}
-                                    style={{
-                                        transitionDuration: `${AUTOPLAY_DELAY + 500}ms`,
-                                    }}
-                                />
-                            </div>
-                        ))}
+                        {HERO_IMAGES.map((image, index) => {
+                            // Before the media query resolves on first client render,
+                            // fall back to rendering both (SSR-safe) but only the
+                            // active slide gets `priority`, so this only costs extra
+                            // bytes on the very first paint before isMobile is known —
+                            // after that, only one image ever mounts.
+                            const showMobile = isMobile === null || isMobile === true;
+                            const showDesktop = isMobile === null || isMobile === false;
+
+                            return (
+                                <div
+                                    key={image.src}
+                                    className="relative min-w-0 flex-[0_0_100%] h-full overflow-hidden"
+                                >
+                                    {showMobile && (
+                                        <Image
+                                            src={image.mobile}
+                                            alt={image.alt}
+                                            fill
+                                            priority={index === 0}
+                                            sizes="100vw"
+                                            className={`${isMobile === null ? "block md:hidden" : "block"} object-cover object-center ease-linear transition-transform ${
+                                                selectedIndex === index
+                                                    ? "scale-110"
+                                                    : "scale-100"
+                                            }`}
+                                            style={{
+                                                transitionDuration: `${AUTOPLAY_DELAY + 500}ms`,
+                                            }}
+                                        />
+                                    )}
+                                    {showDesktop && (
+                                        <Image
+                                            src={image.src}
+                                            alt={image.alt}
+                                            fill
+                                            priority={index === 0}
+                                            sizes="100vw"
+                                            className={`${isMobile === null ? "hidden md:block" : "block"} object-cover object-center ease-linear transition-transform ${
+                                                selectedIndex === index
+                                                    ? "scale-110"
+                                                    : "scale-100"
+                                            }`}
+                                            style={{
+                                                transitionDuration: `${AUTOPLAY_DELAY + 500}ms`,
+                                            }}
+                                        />
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
 
