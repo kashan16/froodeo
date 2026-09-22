@@ -1,110 +1,64 @@
 'use client';
 
-import { Product } from '@/app/api/types';
-import { ActionButton } from '@/components/ui/action-button';
-import { useCart } from '@/lib/cart-context';
-import { simulateDelay } from '@/lib/simulate-display';
-import { Minus, Plus, Star } from 'lucide-react';
-import Image from 'next/image';
-import Link from 'next/link';
+import { Card, CardContent } from "@/components/ui/card";
+import { useCategories } from "@/hooks/useCategories";
+import Image from "next/image";
+import Link from "next/link";
 
-interface ProductCardProps {
-  product: Product;
-}
+export const Category = () => {
+  const { data: categories, isLoading, error } = useCategories();
 
-export function ProductCard({ product }: ProductCardProps) {
-  const { items, addItem, updateQuantity } = useCart();
-  const cartItem = items.find((i) => i.product_id === product.id);
+  if (isLoading) {
+    return (
+      <section className="w-full px-4 py-6 md:px-8">
+        <h2 className="text-xl md:text-2xl font-bold text-black mb-4">Shop by Category</h2>
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 md:gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="aspect-square bg-zinc-100 rounded-xl animate-pulse" />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (error || !categories || categories.length === 0) return null;
 
   return (
-    <Link href={`/product/${product.id}`} className="block h-full">
-      <div className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 h-full flex flex-col">
-        <div className="relative w-full aspect-square bg-zinc-100">
-          {product.image_url ? (
-            <Image
-              src={product.image_url}
-              alt={product.name}
-              fill
-              className="object-cover"
-              sizes="(max-width: 640px) 45vw, (max-width: 1024px) 33vw, 25vw"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-black/30 text-sm">
-              No image
-            </div>
-          )}
-          {!product.is_available && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <span className="text-white text-xs font-semibold">Sold Out</span>
-            </div>
-          )}
-        </div>
-
-        <div className="p-3 flex flex-col flex-1">
-          <h3 className="text-sm font-semibold text-black line-clamp-2">{product.name}</h3>
-
-          {product.rating > 0 && (
-            <div className="flex items-center gap-1 mt-1 text-xs text-black/60">
-              <Star size={12} className="fill-orange-500 text-orange-500" />
-              <span>{product.rating.toFixed(1)}</span>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between mt-auto pt-2">
-            <span className="font-bold text-black">₹{product.price}</span>
-
-            {product.is_available &&
-              (cartItem ? (
-                <div
-                  onClick={(e) => e.preventDefault()}
-                  className="flex items-center gap-2 bg-orange-50 rounded-full px-1 py-1"
-                >
-                  <ActionButton
-                    size="icon"
-                    variant="outline"
-                    idleLabel={<Minus size={14} />}
-                    toastVariant={cartItem.quantity <= 1 ? 'error' : 'success'}
-                    successTitle={cartItem.quantity <= 1 ? 'Removed from cart' : 'Updated quantity'}
-                    successDescription={cartItem.quantity <= 1 ? product.name : undefined}
-                    className="w-6 h-6 border-0 bg-transparent text-orange-500 hover:bg-orange-100"
-                    onAction={async () => {
-                      await simulateDelay();
-                      updateQuantity(product.id, cartItem.quantity - 1);
-                    }}
-                  />
-                  <span className="text-sm font-medium w-4 text-center">{cartItem.quantity}</span>
-                  <ActionButton
-                    size="icon"
-                    variant="outline"
-                    idleLabel={<Plus size={14} />}
-                    successTitle="Updated quantity"
-                    className="w-6 h-6 border-0 bg-transparent text-orange-500 hover:bg-orange-100"
-                    onAction={async () => {
-                      await simulateDelay();
-                      updateQuantity(product.id, cartItem.quantity + 1);
-                    }}
-                  />
-                </div>
-              ) : (
-                <ActionButton
-                  size="icon"
-                  idleLabel={<Plus size={16} />}
-                  successTitle="Added to cart"
-                  successDescription={product.name}
-                  onAction={async () => {
-                    await simulateDelay();
-                    addItem({
-                      product_id: product.id,
-                      name: product.name,
-                      price: product.price,
-                      image_url: product.image_url,
-                    });
-                  }}
-                />
-              ))}
-          </div>
-        </div>
+    <section className="w-full px-4 py-6 md:px-8">
+      <div className="flex flex-row items-center justify-between mb-4">
+        <h2 className="text-xl md:text-2xl font-bold text-black">Shop by Category</h2>
+        <Link
+          href="/menu"
+          className="text-sm font-medium text-orange-500 hover:text-orange-600 transition-colors duration-200"
+        >
+          View All
+        </Link>
       </div>
-    </Link>
+
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 md:gap-4">
+        {categories.map((cat) => (
+          <Link key={cat.id} href={`/category/${cat.id}`}>
+            <Card className="bg-white border-none shadow-none hover:bg-white transition-colors duration-200 cursor-pointer rounded-xl">
+              <CardContent className="flex flex-col items-center justify-center gap-2 p-3">
+                <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-zinc-100">
+                  {cat.image_url && (
+                    <Image
+                      src={cat.image_url}
+                      alt={cat.name}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 33vw, 16vw"
+                    />
+                  )}
+                </div>
+                <span className="text-xs md:text-sm font-semibold text-black text-center line-clamp-1">
+                  {cat.name}
+                </span>
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
-}
+};
