@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import {
   FaFacebook,
@@ -46,24 +47,32 @@ export const Footer = () => {
   return (
     <footer className="w-full bg-black px-6 py-12 text-white md:px-10">
       <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-10 md:grid-cols-5">
-        {/* Logo & Tagline */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-1">
-            <span className="text-2xl">🔥</span>
+    {/* Logo & Tagline */}
+    <div className="flex flex-col items-center text-center gap-2">
+      <div className="flex items-center gap-1">
+        <span className="text-2xl">🔥</span>
 
-            <h2 className="text-2xl font-extrabold tracking-wide text-orange-500">
-              FROODEO
-            </h2>
-          </div>
+        <h2 className="text-2xl font-extrabold tracking-wide text-orange-500">
+          FROODEO
+        </h2>
+      </div>
 
-          <p className="text-sm text-gray-300">
-            Royal Taste, Real Price
-          </p>
+      <p className="text-sm text-gray-300">
+        Royal Taste, Real Price
+      </p>
 
-          <p className="mt-4 text-xs text-gray-500">
-            © {new Date().getFullYear()} Froodeo. All Rights Reserved.
-          </p>
-        </div>
+      <p className="mt-4 text-xs text-gray-500">
+        © {new Date().getFullYear()} Froodeo. All Rights Reserved.
+      </p>
+
+    <Image
+      src="/fssai.png"
+      alt="FSSAI Certified"
+      width={224}
+      height={90}
+      className="mt-3 h-auto w-auto max-h-16 object-contain"
+    />
+    </div>
 
         {/* Company */}
         <div>
