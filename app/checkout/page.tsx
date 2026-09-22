@@ -1,6 +1,7 @@
 'use client';
 
 import { CouponModal } from '@/components/CouponModal';
+import { InvoiceDownloadButton } from '@/components/InvoiceDownloadButton';
 import { ActionButton } from '@/components/ui/action-button';
 import { AnimatedMinus, AnimatedPlus } from '@/components/ui/animted-icons';
 import { useCouponContext } from '@/context/CouponContext';
@@ -87,25 +88,6 @@ export default function CheckoutPage() {
   const total = Math.max(0, subtotal + deliveryCharge + taxAmount - couponDiscount);
   const totalItemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
-  if (items.length === 0 && !orderId) {
-    return (
-      <div className="px-4 py-24 text-center text-black/60">
-        Your cart is empty.
-        <div className="mt-4 max-w-xs mx-auto">
-          <ActionButton
-            onAction={async () => {
-              await simulateDelay(500);
-              router.push('/menu');
-            }}
-            idleLabel="Browse Menu"
-            loadingLabel="Redirecting..."
-            successTitle="Heading to menu"
-          />
-        </div>
-      </div>
-    );
-  }
-
   const validate = () => {
     if (!name.trim()) return 'Please enter your name';
     if (!/^[6-9]\d{9}$/.test(phone.trim())) return 'Please enter a valid 10-digit phone number';
@@ -178,7 +160,8 @@ export default function CheckoutPage() {
 
       clearCart();
       clearCoupon();
-      router.push(`/order-confirmation/${order.id}`);
+      // no redirect — stay on checkout so the success view below (with the
+      // invoice download button) renders in place
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to place order';
       setFormError(message);
@@ -189,6 +172,48 @@ export default function CheckoutPage() {
   };
 
   const isBusy = createOrder.isPending || placing || (paymentMethod === 'online' && paymentLoading);
+
+  // Order placed successfully — show a success screen with invoice access
+  // instead of the form. Checked before the empty-cart guard below since
+  // clearCart() has already emptied `items` by this point.
+  if (orderId) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <h1 className="text-2xl font-bold text-black mb-2">Order placed!</h1>
+        <p className="text-black/60 mb-6">
+          We&apos;ll notify you once it&apos;s on the way. Order ID: <span className="font-mono">{orderId}</span>
+        </p>
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          <InvoiceDownloadButton orderId={orderId} />
+          <button
+            onClick={() => router.push(`/order-confirmation/${orderId}`)}
+            className="px-4 h-10 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600"
+          >
+            Track Order
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="px-4 py-24 text-center text-black/60">
+        Your cart is empty.
+        <div className="mt-4 max-w-xs mx-auto">
+          <ActionButton
+            onAction={async () => {
+              await simulateDelay(500);
+              router.push('/menu');
+            }}
+            idleLabel="Browse Menu"
+            loadingLabel="Redirecting..."
+            successTitle="Heading to menu"
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 md:py-12 pb-32">
@@ -418,13 +443,6 @@ export default function CheckoutPage() {
         {(formError || paymentError) && (
           <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">
             {formError || paymentError}
-            {orderId && paymentMethod === 'online' && (
-              <div className="mt-2">
-                <a href={`/orders/${orderId}/pay`} className="underline font-medium">
-                  Your order is saved — complete payment here
-                </a>
-              </div>
-            )}
           </div>
         )}
       </div>
