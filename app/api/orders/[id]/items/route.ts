@@ -37,11 +37,30 @@ export async function POST(request: NextRequest, { params }: { params: Params })
   // Price is looked up server-side — never trust a client-sent unit_price.
   const { data: product } = await supabaseAdmin
     .from('products')
-    .select('price, is_available')
+    .select('price, is_available, stock_quantity')
     .eq('id', product_id)
     .single();
   if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 400 });
   if (!product.is_available) return NextResponse.json({ error: 'Product no longer available' }, { status: 400 });
+
+  // #7 — same stock-limit enforcement as order creation. If this item
+  // already exists on the order, its previously-reserved quantity was
+  // never re-added back to stock_quantity (stock is decremented once
+  // at order-creation time, not per line-item edit), so a fresh add
+  // here is checked against current stock as-is — this route is for
+  // adding a *new* line item, not adjusting an existing one's quantity
+  // (that's PUT /api/order-items/:id).
+  if (product.stock_quantity !== null && quantity > product.stock_quantity) {
+    return NextResponse.json(
+      {
+        error:
+          product.stock_quantity === 0
+            ? 'Out of stock'
+            : `Only ${product.stock_quantity} left in stock for this item`,
+      },
+      { status: 400 }
+    );
+  }
 
   const { data, error } = await supabaseAdmin
     .from('order_items')
@@ -56,6 +75,16 @@ export async function POST(request: NextRequest, { params }: { params: Params })
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // #7 — decrement stock for the newly added item, mirroring the
+  // decrement done at order-creation time so stock stays accurate
+  // when items are added post-creation (before payment/confirmation).
+  if (product.stock_quantity !== null) {
+    await supabaseAdmin
+      .from('products')
+      .update({ stock_quantity: Math.max(0, product.stock_quantity - quantity) })
+      .eq('id', product_id);
+  }
 
   await recalculateOrderTotals(id);
   return NextResponse.json({ data }, { status: 201 });

@@ -1,9 +1,9 @@
 'use client';
 
-import Image from "next/image";
-import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCategories } from "@/hooks/useCategories";
+import Image from "next/image";
+import Link from "next/link";
 
 export const Category = () => {
   const { data: categories, isLoading, error } = useCategories();
@@ -42,7 +42,13 @@ export const Category = () => {
               <CardContent className="flex flex-col items-center justify-center gap-2 p-3">
                 <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-zinc-100">
                   {cat.image_url && (
-                    <Image src={cat.image_url} alt={cat.name} fill className="object-cover"  unoptimized/>
+                    <Image
+                      src={cat.image_url}
+                      alt={cat.name}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 33vw, 16vw"
+                    />
                   )}
                 </div>
                 <span className="text-xs md:text-sm font-semibold text-black text-center line-clamp-1">

@@ -1,6 +1,7 @@
 import { SiteChrome } from "@/components/SiteChrome";
 import { ToasterMount } from "@/components/ToasterMount";
 import { AuthProvider } from "@/context/AuthContext";
+import { CouponProvider } from "@/context/CouponContext";
 import { CartProvider } from "@/lib/cart-context";
 import { QueryProvider } from "@/lib/query-provider";
 import { cn } from "@/lib/utils";
@@ -47,7 +48,9 @@ export default function RootLayout({
         <AuthProvider>
         <QueryProvider>
           <CartProvider>
-            <SiteChrome>{children}</SiteChrome>
+            <CouponProvider>
+              <SiteChrome>{children}</SiteChrome>
+            </CouponProvider>
           </CartProvider>
         </QueryProvider>
         </AuthProvider>

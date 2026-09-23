@@ -12,6 +12,7 @@ export interface Product {
     is_available: boolean;
     is_featured: boolean;
     loyalty_points: number;
+    stock_quantity: number | null;
     categories?: { id: string; name: string } | null;
 }
 

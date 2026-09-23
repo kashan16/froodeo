@@ -1,12 +1,11 @@
+import Image from "next/image";
 import Link from "next/link";
 import {
   FaFacebook,
   FaInstagram,
-  FaWhatsapp,
-  FaYoutube,
-  FaPhoneAlt,
-  FaEnvelope,
   FaMapMarkerAlt,
+  FaPhoneAlt,
+  FaWhatsapp
 } from "react-icons/fa";
 
 const CompanyInfo = [
@@ -27,25 +26,19 @@ const SocialMediaLinks = [
   {
     name: "Facebook",
     icon: FaFacebook,
-    href: "https://www.facebook.com/froodeo",
+    href: "https://www.facebook.com/yaseen.171",
     color: "#1877F2",
   },
   {
     name: "Instagram",
     icon: FaInstagram,
-    href: "https://www.instagram.com/froodeo",
+    href: "https://www.instagram.com/froodeo_06?igsi=MThlbXM3aHBrZGFnNw==",
     color: "#E1306C",
-  },
-  {
-    name: "YouTube",
-    icon: FaYoutube,
-    href: "https://www.youtube.com/froodeo",
-    color: "#FF0000",
   },
   {
     name: "WhatsApp",
     icon: FaWhatsapp,
-    href: "https://wa.me/911234567890",
+    href: "https://wa.me/message/5E3HAIQX53FQO1",
     color: "#25D366",
   },
 ];
@@ -54,24 +47,32 @@ export const Footer = () => {
   return (
     <footer className="w-full bg-black px-6 py-12 text-white md:px-10">
       <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-10 md:grid-cols-5">
-        {/* Logo & Tagline */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-1">
-            <span className="text-2xl">🔥</span>
+    {/* Logo & Tagline */}
+    <div className="flex flex-col items-center text-center gap-2">
+      <div className="flex items-center gap-1">
+        <span className="text-2xl">🔥</span>
 
-            <h2 className="text-2xl font-extrabold tracking-wide text-orange-500">
-              FROODEO
-            </h2>
-          </div>
+        <h2 className="text-2xl font-extrabold tracking-wide text-orange-500">
+          FROODEO
+        </h2>
+      </div>
 
-          <p className="text-sm text-gray-300">
-            Royal Taste, Real Price
-          </p>
+      <p className="text-sm text-gray-300">
+        Royal Taste, Real Price
+      </p>
 
-          <p className="mt-4 text-xs text-gray-500">
-            © {new Date().getFullYear()} Froodeo. All Rights Reserved.
-          </p>
-        </div>
+      <p className="mt-4 text-xs text-gray-500">
+        © {new Date().getFullYear()} Froodeo. All Rights Reserved.
+      </p>
+
+    <Image
+      src="/fssai.png"
+      alt="FSSAI Certified"
+      width={224}
+      height={90}
+      className="mt-3 h-auto w-auto max-h-16 object-contain"
+    />
+    </div>
 
         {/* Company */}
         <div>
@@ -125,15 +126,7 @@ export const Footer = () => {
                 className="shrink-0"
                 size={14}
               />
-              <span>+91 123 456 7890</span>
-            </li>
-
-            <li className="flex items-center gap-2 text-sm text-gray-400">
-              <FaEnvelope
-                className="shrink-0"
-                size={14}
-              />
-              <span>hello@froodeo.in</span>
+              <span>+91 91942 09551</span>
             </li>
 
             <li className="flex items-start gap-2 text-sm text-gray-400">
