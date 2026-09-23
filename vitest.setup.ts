@@ -1,5 +1,10 @@
-
 process.env.ORDER_TOKEN_SECRET = 'test-secret-do-not-use-in-prod';
 process.env.RAZORPAY_KEY_ID = 'rzp_test_key';
 process.env.RAZORPAY_KEY_SECRET = 'rzp_test_secret';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'webhook_test_secret';
+process.env.NEXT_SUPABASE_URL = 'https://test.supabase.co';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+process.env.JWT_ACCESS_SECRET = 'test-jwt-access-secret';
+process.env.ADMIN_JWT_SECRET = 'test-jwt-admin-secret';
+process.env.MSG91_AUTH_KEY = 'test-msg91-auth-key';
+process.env.MSG91_TEMPLATE_ID = 'test-template-id';
